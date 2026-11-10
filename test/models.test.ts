@@ -543,6 +543,22 @@ test("filter reads every earlier field before stopping on function calling", () 
   expect(probe.reads).toContain("supportsE2EE")
   expect(probe.reads).toContain("supportsTeeAttestation")
   expect(probe.reads).toContain("supportsFunctionCalling")
+  // The capabilities container is read twice (e2ee block, then function-calling
+  // block); only each rule field's first read carries the ordering contract.
+  const ruleFields = [
+    "offline",
+    "betaModel",
+    "deprecation",
+    "supportsE2EE",
+    "supportsFunctionCalling",
+  ]
+  const firstReadIndexes = ruleFields.map((field) => probe.reads.indexOf(field))
+  for (const [position, index] of firstReadIndexes.entries()) {
+    expect(index).toBeGreaterThanOrEqual(0)
+    if (position > 0) {
+      expect(index).toBeGreaterThan(firstReadIndexes[position - 1])
+    }
+  }
 })
 
 test("mapping passes name, limits and prices through and keys by id", () => {
