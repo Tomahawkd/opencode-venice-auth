@@ -92,7 +92,12 @@ export function filterAndMapModels(list: VeniceModel[]): ProviderModels {
       continue
     }
     if (spec.capabilities.supportsFunctionCalling === false) continue
-    models[model.id] = mapVeniceModel(model)
+    Object.defineProperty(models, model.id, {
+      value: mapVeniceModel(model),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
   }
   return models
 }

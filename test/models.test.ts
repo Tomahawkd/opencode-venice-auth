@@ -315,18 +315,28 @@ test("filter drops a deprecated model", () => {
   expect(Object.keys(kept)).toEqual(["available"])
 })
 
-test("filter drops e2ee models by prefix, flag or attestation flag", () => {
+test("filter drops e2ee models by prefix, e2ee flag or tee attestation flag", () => {
   const kept = filterAndMapModels([
     makeSimpleModel("e2ee-by-prefix"),
-    makeModel({ ...BASE_MODEL, id: "e2ee-by-flag", supportsE2EE: true }),
+    makeModel({ ...BASE_MODEL, id: "flagged-e2ee", supportsE2EE: true }),
     makeModel({
       ...BASE_MODEL,
-      id: "e2ee-by-attestation",
+      id: "attested-tee",
       supportsTeeAttestation: true,
     }),
     makeSimpleModel("available"),
   ])
   expect(Object.keys(kept)).toEqual(["available"])
+})
+
+test("filter keeps a __proto__ model id as an own enumerable key", () => {
+  const kept = filterAndMapModels([
+    makeSimpleModel("__proto__"),
+    makeSimpleModel("available"),
+  ])
+  expect(Object.hasOwn(kept, "__proto__")).toBe(true)
+  expect(Object.keys(kept)).toEqual(["__proto__", "available"])
+  expect(kept["__proto__"].id).toBe("__proto__")
 })
 
 test("filter drops a model without function calling", () => {
