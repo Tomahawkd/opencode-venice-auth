@@ -39,7 +39,7 @@ export type RateLimitsResult =
 // shape can be parsed independently of the fetch abstraction.
 export type JsonScalar = string | number | boolean | null
 export interface JsonObject {
-  [key: string]: JsonValue
+  [key: string]: JsonValue | undefined
 }
 export type JsonValue = JsonScalar | JsonValue[] | JsonObject
 
