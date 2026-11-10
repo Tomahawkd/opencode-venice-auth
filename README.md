@@ -55,6 +55,7 @@ git clone https://github.com/Tomahawkd/opencode-venice-auth
 cd opencode-venice-auth
 magpie plugin add ./
 magpie plugin login venice
+magpie provider test venice
 ```
 
 Without cloning, install straight from the repository: `magpie plugin add https://github.com/Tomahawkd/opencode-venice-auth`.
