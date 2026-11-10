@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "include": ["index.ts", "src/*", "test/*"],
+  "checkers": {
+    "architecture.import": {
+      "boundaries": [
+        {
+          "name": "src modules never import the entry",
+          "sources": ["src/*"],
+          "forbidden_imports": ["index", "index.ts"]
+        },
+        {
+          "name": "venice interface module stays independent of mapping modules",
+          "sources": ["src/venice.ts"],
+          "forbidden_imports": [
+            "src/models.ts", "src/usage.ts", "src/auth.ts",
+            "src.models", "src.usage", "src.auth"
+          ]
+        }
+      ]
+    }
+  }
+}
