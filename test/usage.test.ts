@@ -52,7 +52,7 @@ function apiAuth(key: string): () => Promise<UsageAuth> {
 const FIXTURE_REPORT: UsageSuccess = {
   balance: "$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS",
   until: "2025-06-01T00:00:00.000Z",
-  windows: [{ name: "zai-org-glm-5-1", display: "100 RPM" }],
+  windows: [{ name: "per-model RPM", display: "100 across 1 model" }],
 }
 
 test("createAuth exposes a usage hook that runs through the injected fetch", async () => {
@@ -127,12 +127,132 @@ test("rate limits become display-only windows and empty entries are skipped", ()
     }),
   )
   expect(result.windows).toEqual([
-    { name: "model-a", display: "100 RPM / 10000 TPM" },
     { name: "all models", display: "50 RPM" },
+    { name: "per-model RPM", display: "100 across 1 model" },
+    { name: "per-model TPM", display: "10000 across 1 model" },
   ])
 
   const none = mapRateLimits(makeSample({ rateLimits: [] }))
   expect(none.windows).toEqual([])
+})
+
+test("per-model windows fold multiple models into per-type min-max summaries", () => {
+  const result = mapRateLimits(
+    makeSample({
+      rateLimits: [
+        {
+          apiModelId: "model-a",
+          rateLimits: [
+            { amount: 50, type: "RPM" },
+            { amount: 10000, type: "TPM" },
+          ],
+        },
+        {
+          apiModelId: "model-b",
+          rateLimits: [
+            { amount: 75, type: "RPM" },
+            { amount: 20000, type: "TPM" },
+          ],
+        },
+        {
+          apiModelId: "model-c",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+      ],
+    }),
+  )
+  expect(result.windows).toEqual([
+    { name: "per-model RPM", display: "50-100 across 3 models" },
+    { name: "per-model TPM", display: "10000-20000 across 2 models" },
+  ])
+})
+
+test("equal caps across multiple models use the plural summary", () => {
+  const result = mapRateLimits(
+    makeSample({
+      rateLimits: [
+        {
+          apiModelId: "model-a",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+        {
+          apiModelId: "model-b",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+      ],
+    }),
+  )
+  expect(result.windows).toEqual([
+    { name: "per-model RPM", display: "100 across 2 models" },
+  ])
+})
+
+test("account-level caps stay ahead of per-model summaries regardless of order", () => {
+  const result = mapRateLimits(
+    makeSample({
+      rateLimits: [
+        {
+          apiModelId: "model-a",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+        {
+          rateLimits: [
+            { amount: 50, type: "RPM" },
+            { amount: 5000, type: "TPM" },
+          ],
+        },
+        {
+          apiModelId: "model-b",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+      ],
+    }),
+  )
+  expect(result.windows).toEqual([
+    { name: "all models", display: "50 RPM / 5000 TPM" },
+    { name: "per-model RPM", display: "100 across 2 models" },
+  ])
+})
+
+test("empty entries do not count toward a type's model total", () => {
+  const result = mapRateLimits(
+    makeSample({
+      rateLimits: [
+        {
+          apiModelId: "model-a",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+        { apiModelId: "empty-model", rateLimits: [] },
+        { rateLimits: [] },
+        {
+          apiModelId: "model-b",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+      ],
+    }),
+  )
+  expect(result.windows).toEqual([
+    { name: "per-model RPM", display: "100 across 2 models" },
+  ])
+})
+
+test("hundreds of model entries collapse to one window per limit type", () => {
+  const rateLimits = Array.from({ length: 251 }, (_, index) => ({
+    apiModelId: `model-${index}`,
+    rateLimits:
+      index < 200
+        ? [
+            { amount: 100, type: "RPM" },
+            { amount: 10000, type: "TPM" },
+          ]
+        : [{ amount: 100, type: "RPM" }],
+  }))
+  const result = mapRateLimits(makeSample({ rateLimits }))
+  expect(result.windows).toHaveLength(2)
+  expect(result.windows).toEqual([
+    { name: "per-model RPM", display: "100 across 251 models" },
+    { name: "per-model TPM", display: "10000 across 200 models" },
+  ])
 })
 
 test("HTTP 402 reports a balance or spending-cap failure without marking sign-in", async () => {

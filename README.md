@@ -44,7 +44,7 @@ The plugin does not send `venice_parameters` in requests. Venice therefore appli
 
 - All balances that are present, joined in the order USD, DIEM, BUNDLED_CREDITS, for example `$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS`.
 - The key expiration time, when there is one.
-- Rate-limit caps per model (or for all models). Only caps are shown: Venice does not report consumption, so the plugin does not invent a used amount.
+- Rate-limit caps summarized per limit type as a range (for example `50-100 across 119 models`), with account-wide caps listed first. Only caps are shown: Venice does not report consumption, so the plugin does not invent a used amount. Per-model caps remain available from Venice at `GET /api_keys/rate_limits`.
 
 An HTTP 402 from a usage request is displayed as the balance or spending-cap condition described in [Sign-in](#http-402-is-not-an-expired-sign-in).
 
