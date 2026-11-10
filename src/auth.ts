@@ -1,5 +1,7 @@
 import { BASE, fetchRateLimits } from "./venice"
 import type { FetchLike } from "./venice"
+import { createUsage } from "./usage"
+import type { UsageReport } from "./usage"
 
 export interface AuthorizeInputs {
   [name: string]: string
@@ -57,6 +59,7 @@ interface AuthHooks {
   loader: (
     getAuth: () => Promise<VeniceAuth | undefined>,
   ) => Promise<AuthLoaderResult>
+  usage: (getAuth: () => Promise<VeniceAuth | undefined>) => Promise<UsageReport>
 }
 
 interface CreateAuthOptions {
@@ -65,7 +68,7 @@ interface CreateAuthOptions {
 
 export function createAuth({ fetchImpl = fetch }: CreateAuthOptions = {}): AuthHooks {
   return {
-    provider: "venice",
+    provider: "venice", usage: createUsage(fetchImpl),
     methods: [
       {
         type: "api",
