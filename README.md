@@ -30,7 +30,7 @@ Models are skipped when they are offline, in beta, deprecated, end-to-end encryp
 
 - `availableContextTokens` and `maxCompletionTokens` become the context and output limits.
 - Reasoning, tool-call, vision (as both image input and attachments), and audio-input support become capability flags.
-- Venice's input and output prices and the cache read/write prices, in USD per million tokens, become the model costs; prices Venice does not report are mapped to 0.
+- Venice's input and output prices and the cache read/write prices, in USD per million tokens, become the model costs; a cache read or write price Venice does not report is mapped to 0.
 
 The list changes as Venice changes it, so this README intentionally contains no static model table or model count.
 
@@ -55,8 +55,9 @@ git clone https://github.com/Tomahawkd/opencode-venice-auth
 cd opencode-venice-auth
 magpie plugin add ./
 magpie plugin login venice
-magpie provider test venice
 ```
+
+Without cloning, install straight from the repository: `magpie plugin add https://github.com/Tomahawkd/opencode-venice-auth`.
 
 The package is also an OpenCode v1 plugin and can be used as an OpenCode plugin.
 
