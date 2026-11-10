@@ -237,20 +237,34 @@ test("snapshot mapping preserves a fully populated model", () => {
   expect(mapped["qwen-3-8-max"]).toEqual({
     id: "qwen-3-8-max",
     name: "Qwen 3.8 Max",
-    reasoning: true,
-    tool_call: true,
-    modalities: { input: ["text", "image"], output: ["text"] },
+    status: "active",
+    release_date: "",
     limit: { context: 1000000, output: 131072 },
     cost: {
       input: 2.5,
       output: 7.5,
-      cache_read: 0.3125,
-      cache_write: 3.125,
+      cache: { read: 0.3125, write: 3.125 },
     },
+    capabilities: {
+      reasoning: true,
+      toolcall: true,
+      attachment: true,
+      input: { text: true, pdf: false, image: true, audio: false },
+      output: { text: true, image: false, audio: false, video: false },
+      temperature: true,
+      interleaved: false,
+    },
+    api: {
+      id: "qwen-3-8-max",
+      url: BASE,
+      npm: "@ai-sdk/openai-compatible",
+    },
+    options: {},
+    headers: {},
   })
 })
 
-test("snapshot mapping leaves absent cache prices undefined", () => {
+test("snapshot mapping fills absent cache prices with zero", () => {
   const models = snapshotModels()
   const mapped = filterAndMapModels(models)
   const source = models.find(
@@ -263,11 +277,11 @@ test("snapshot mapping leaves absent cache prices undefined", () => {
     throw new Error("fixture has no kept model without cache pricing")
   }
   const entry = mapped[source.id]
-  expect(entry?.cost.cache_read).toBeUndefined()
-  expect(entry?.cost.cache_write).toBeUndefined()
+  expect(entry?.cost.cache.read).toBe(0)
+  expect(entry?.cost.cache.write).toBe(0)
 })
 
-test("snapshot mapping adds audio input when the capability is set", () => {
+test("snapshot mapping marks audio input when the capability is set", () => {
   const models = snapshotModels()
   const mapped = filterAndMapModels(models)
   const source = models.find(
@@ -278,16 +292,19 @@ test("snapshot mapping adds audio input when the capability is set", () => {
   if (source === undefined) {
     throw new Error("fixture has no kept model with audio input")
   }
-  expect(mapped[source.id]?.modalities.input).toContain("audio")
+  expect(mapped[source.id]?.capabilities.input.audio).toBe(true)
 })
 
-test("every snapshot entry is a text-output model with text first", () => {
+test("every snapshot entry is a text model with the nested constant fields", () => {
   const mapped = filterAndMapModels(snapshotModels())
   const entries = Object.values(mapped)
   expect(entries.length).toBe(SNAPSHOT.kept)
   for (const entry of entries) {
-    expect(entry.modalities.output).toEqual(["text"])
-    expect(entry.modalities.input[0]).toBe("text")
+    expect(entry.capabilities.output.text).toBe(true)
+    expect(entry.capabilities.input.text).toBe(true)
+    expect(entry.api.npm).toBe("@ai-sdk/openai-compatible")
+    expect(entry.api.url).toBe(BASE)
+    expect(entry.status).toBe("active")
   }
 })
 
@@ -370,20 +387,34 @@ test("mapping passes name, limits and prices through and keys by id", () => {
   expect(kept["values"]).toEqual({
     id: "values",
     name: "Values",
-    reasoning: true,
-    tool_call: true,
-    modalities: { input: ["text"], output: ["text"] },
+    status: "active",
+    release_date: "",
     limit: { context: 1000000, output: 131072 },
     cost: {
       input: 2.5,
       output: 7.5,
-      cache_read: 0.3125,
-      cache_write: 3.125,
+      cache: { read: 0.3125, write: 3.125 },
     },
+    capabilities: {
+      reasoning: true,
+      toolcall: true,
+      attachment: false,
+      input: { text: true, pdf: false, image: false, audio: false },
+      output: { text: true, image: false, audio: false, video: false },
+      temperature: true,
+      interleaved: false,
+    },
+    api: {
+      id: "values",
+      url: BASE,
+      npm: "@ai-sdk/openai-compatible",
+    },
+    options: {},
+    headers: {},
   })
 })
 
-test("mapping builds input modalities from the capability flags", () => {
+test("mapping builds input capability booleans from the flags", () => {
   const kept = filterAndMapModels([
     makeSimpleModel("plain"),
     makeModel({ ...BASE_MODEL, id: "vision", supportsVision: true }),
@@ -395,10 +426,42 @@ test("mapping builds input modalities from the capability flags", () => {
       supportsAudioInput: true,
     }),
   ])
-  expect(kept["plain"]?.modalities.input).toEqual(["text"])
-  expect(kept["vision"]?.modalities.input).toEqual(["text", "image"])
-  expect(kept["audio"]?.modalities.input).toEqual(["text", "audio"])
-  expect(kept["both"]?.modalities.input).toEqual(["text", "image", "audio"])
+  expect(kept["plain"]?.capabilities.input).toEqual({
+    text: true,
+    pdf: false,
+    image: false,
+    audio: false,
+  })
+  expect(kept["vision"]?.capabilities.input).toEqual({
+    text: true,
+    pdf: false,
+    image: true,
+    audio: false,
+  })
+  expect(kept["audio"]?.capabilities.input).toEqual({
+    text: true,
+    pdf: false,
+    image: false,
+    audio: true,
+  })
+  expect(kept["both"]?.capabilities.input).toEqual({
+    text: true,
+    pdf: false,
+    image: true,
+    audio: true,
+  })
+  expect(kept["plain"]?.capabilities.attachment).toBe(
+    kept["plain"]?.capabilities.input.image,
+  )
+  expect(kept["vision"]?.capabilities.attachment).toBe(
+    kept["vision"]?.capabilities.input.image,
+  )
+  expect(kept["audio"]?.capabilities.attachment).toBe(
+    kept["audio"]?.capabilities.input.image,
+  )
+  expect(kept["both"]?.capabilities.attachment).toBe(
+    kept["both"]?.capabilities.input.image,
+  )
 })
 
 test("hook returns the existing list when no api key is available", async () => {

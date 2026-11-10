@@ -1,31 +1,71 @@
-import { fetchModels } from "./venice"
+import { BASE, fetchModels } from "./venice"
 import type { FetchLike, VeniceModel } from "./venice"
-
-export interface ModelCost {
-  input: number
-  output: number
-  cache_read?: number
-  cache_write?: number
-}
 
 export interface ModelLimit {
   context: number
   output: number
 }
 
-export interface ModelModalities {
-  input: string[]
-  output: string[]
+export interface ModelCostCache {
+  read: number
+  write: number
+}
+
+export interface ModelCost {
+  input: number
+  output: number
+  cache: ModelCostCache
+}
+
+export interface ModelCapabilitiesInput {
+  text: boolean
+  pdf: boolean
+  image: boolean
+  audio: boolean
+}
+
+export interface ModelCapabilitiesOutput {
+  text: boolean
+  image: boolean
+  audio: boolean
+  video: boolean
+}
+
+export interface ModelCapabilities {
+  reasoning: boolean
+  toolcall: boolean
+  attachment: boolean
+  input: ModelCapabilitiesInput
+  output: ModelCapabilitiesOutput
+  temperature: boolean
+  interleaved: boolean
+}
+
+export interface ModelApi {
+  id: string
+  url: string
+  npm: string
+}
+
+export interface ModelOptions {
+  [key: string]: string
+}
+
+export interface ModelHeaders {
+  [name: string]: string
 }
 
 export interface ModelEntry {
   id: string
   name: string
-  reasoning: boolean
-  tool_call: boolean
-  modalities: ModelModalities
+  status: "active"
+  release_date: string
   limit: ModelLimit
   cost: ModelCost
+  capabilities: ModelCapabilities
+  api: ModelApi
+  options: ModelOptions
+  headers: ModelHeaders
 }
 
 export type ProviderModels = { [id: string]: ModelEntry }
@@ -54,16 +94,8 @@ function mapVeniceModel(model: VeniceModel): ModelEntry {
   return {
     id: model.id,
     name: spec.name,
-    reasoning: capabilities.supportsReasoning,
-    tool_call: capabilities.supportsFunctionCalling,
-    modalities: {
-      input: [
-        "text",
-        ...(capabilities.supportsVision ? ["image"] : []),
-        ...(capabilities.supportsAudioInput ? ["audio"] : []),
-      ],
-      output: ["text"],
-    },
+    status: "active",
+    release_date: "",
     limit: {
       context: spec.availableContextTokens,
       output: spec.maxCompletionTokens,
@@ -71,9 +103,37 @@ function mapVeniceModel(model: VeniceModel): ModelEntry {
     cost: {
       input: spec.pricing.input.usd,
       output: spec.pricing.output.usd,
-      ...(spec.pricing.cache_input ? { cache_read: spec.pricing.cache_input.usd } : {}),
-      ...(spec.pricing.cache_write ? { cache_write: spec.pricing.cache_write.usd } : {}),
+      cache: {
+        read: spec.pricing.cache_input?.usd ?? 0,
+        write: spec.pricing.cache_write?.usd ?? 0,
+      },
     },
+    capabilities: {
+      reasoning: capabilities.supportsReasoning,
+      toolcall: capabilities.supportsFunctionCalling,
+      attachment: capabilities.supportsVision,
+      input: {
+        text: true,
+        pdf: false,
+        image: capabilities.supportsVision,
+        audio: capabilities.supportsAudioInput,
+      },
+      output: {
+        text: true,
+        image: false,
+        audio: false,
+        video: false,
+      },
+      temperature: true,
+      interleaved: false,
+    },
+    api: {
+      id: model.id,
+      url: BASE,
+      npm: "@ai-sdk/openai-compatible",
+    },
+    options: {},
+    headers: {},
   }
 }
 
