@@ -16,9 +16,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: uvx pluvy --all
-        if: ${{ !cancelled() }}
       - run: bun test
         if: ${{ !cancelled() }}
       - run: bun run typecheck
+        if: ${{ !cancelled() }}
+      - run: uvx pluvy --all
         if: ${{ !cancelled() }}
