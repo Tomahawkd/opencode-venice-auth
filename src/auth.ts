@@ -29,10 +29,20 @@ interface AuthSuccess {
 
 type AuthResult = AuthFailure | AuthSuccess
 
+interface AuthPrompt {
+  type: "text"
+  key: string
+  message: string
+  placeholder: string
+  validate: (value: string) => string | undefined
+}
+
 interface AuthMethod {
   type: "api"
   label: string
   placeholder: string
+  keyless: true
+  prompts: AuthPrompt[]
   authorize: (inputs?: AuthorizeInputs) => Promise<AuthResult>
 }
 
@@ -61,6 +71,16 @@ export function createAuth({ fetchImpl = fetch }: CreateAuthOptions = {}): AuthH
         type: "api",
         label: "Venice API key",
         placeholder: "Your Venice API key",
+        keyless: true,
+        prompts: [
+          {
+            type: "text",
+            key: "apiKey",
+            message: "Venice API key",
+            placeholder: "Your Venice API key",
+            validate: (value: string) => value.trim() ? undefined : "A Venice API key is required",
+          },
+        ],
         async authorize(inputs?: AuthorizeInputs): Promise<AuthResult> {
           const apiKey = inputs?.apiKey?.trim()
           if (!apiKey) {

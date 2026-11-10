@@ -28,14 +28,33 @@ test("api method shape is exact and authorize is callable", () => {
   const method = auth.methods[0]
   expect(Object.keys(method).sort()).toEqual([
     "authorize",
+    "keyless",
     "label",
     "placeholder",
+    "prompts",
     "type",
   ])
   expect(method.type).toBe("api")
   expect(method.label).toBe("Venice API key")
   expect(method.placeholder).toBe("Your Venice API key")
+  expect(method.keyless).toBe(true)
+  expect(method.prompts).toHaveLength(1)
+  const prompt = method.prompts[0]
+  expect(prompt.type).toBe("text")
+  expect(prompt.key).toBe("apiKey")
+  expect(prompt.placeholder).toBe("Your Venice API key")
+  expect(prompt.placeholder.toLowerCase()).not.toContain("sk-")
   expect(typeof method.authorize).toBe("function")
+})
+
+test("the prompt accepts a non-blank key and rejects blank input", () => {
+  const prompt = createAuth().methods[0].prompts[0]
+  const blankError = prompt.validate("  ")
+  expect(typeof blankError).toBe("string")
+  if (typeof blankError === "string") {
+    expect(blankError.toLowerCase()).toContain("required")
+  }
+  expect(prompt.validate(" some-key ")).toBeUndefined()
 })
 
 test("missing, empty and blank keys fail with a required-key message", async () => {
