@@ -16,7 +16,7 @@ magpie plugin login venice
 
 magpie asks for the key once in a single text prompt. The value is used as-is apart from trimming surrounding whitespace; the plugin does not check a prefix or a key format before contacting Venice.
 
-The key is validated with `GET /api_keys/rate_limits`. An invalid key fails with `Venice rejected this API key (HTTP 401)`, and the account is marked as needing to sign in again. A key that cannot use inference endpoints fails with `This key cannot use Venice inference APIs (accessPermitted=false)`. On success, magpie stores the sign-in state in its local plugin credential store.
+The key is validated with `GET /api_keys/rate_limits`. An invalid key fails with `Venice rejected this API key (HTTP 401)`; the sign-in stops there and nothing is saved. A key that cannot use inference endpoints fails with `This key cannot use Venice inference APIs (accessPermitted=false)`. On success, magpie stores the sign-in state in its local plugin credential store. If a saved key is later rejected with HTTP 401 — for example after it is revoked in Venice — magpie then marks the account as needing to sign in again.
 
 ### HTTP 402 is not an expired sign-in
 
