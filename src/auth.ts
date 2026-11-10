@@ -1,5 +1,5 @@
-import { BASE, fetchRateLimits } from "./venice"
-import type { FetchLike } from "./venice"
+import { BASE, UNEXPECTED_RESPONSE_SHAPE, fetchRateLimits } from "./venice"
+import type { FetchLike, RateLimitsResult } from "./venice"
 import { createUsage } from "./usage"
 import type { UsageReport } from "./usage"
 
@@ -66,6 +66,25 @@ interface CreateAuthOptions {
   fetchImpl?: FetchLike
 }
 
+type RateLimitsFailure = Extract<RateLimitsResult, { ok: false }>
+
+function signInFailureMessage(failure: RateLimitsFailure): string {
+  if (failure.detail === UNEXPECTED_RESPONSE_SHAPE) {
+    return "Venice returned an unexpected sign-in response shape"
+  }
+  if (failure.status === 401) {
+    const detail = failure.detail ? `: ${failure.detail}` : ""
+    return `Venice rejected this API key (HTTP 401)${detail}`
+  }
+  if (failure.status === 402) {
+    return "Venice reports insufficient balance or a spending cap was reached (HTTP 402)"
+  }
+  if (failure.status === 429 || failure.status >= 500) {
+    return `Venice could not verify this API key (HTTP ${failure.status}); please try again later`
+  }
+  return `Venice could not verify this API key (HTTP ${failure.status})`
+}
+
 export function createAuth({ fetchImpl = fetch }: CreateAuthOptions = {}): AuthHooks {
   return {
     provider: "venice", usage: createUsage(fetchImpl),
@@ -91,11 +110,7 @@ export function createAuth({ fetchImpl = fetch }: CreateAuthOptions = {}): AuthH
           }
           const result = await fetchRateLimits(apiKey, fetchImpl)
           if (!result.ok) {
-            const detail = result.detail ? `: ${result.detail}` : ""
-            return {
-              type: "failed",
-              error: `Venice rejected this API key (HTTP ${result.status})${detail}`,
-            }
+            return { type: "failed", error: signInFailureMessage(result) }
           }
           if (!result.data.data.accessPermitted) {
             return {

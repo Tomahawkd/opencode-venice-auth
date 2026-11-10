@@ -81,6 +81,7 @@ test("a 401 response fails with the HTTP status in the message", async () => {
   expect(result.type).toBe("failed")
   if (result.type === "failed") {
     expect(result.error).toContain("401")
+    expect(result.error.toLowerCase()).toContain("rejected")
   }
 })
 
@@ -92,6 +93,34 @@ test("a 402 response fails with the HTTP status in the message", async () => {
   expect(result.type).toBe("failed")
   if (result.type === "failed") {
     expect(result.error).toContain("402")
+    expect(result.error.toLowerCase()).toMatch(/balance|spending cap/)
+    expect(result.error).not.toContain("rejected this API key")
+  }
+})
+
+test("a 429 response reports a verification or service failure that can be retried", async () => {
+  const stub = makeStub({ ok: false, status: 429, json: async () => ({}) })
+  const result = await createAuth({ fetchImpl: stub.fetchImpl }).methods[0].authorize({
+    apiKey: "throttled-key",
+  })
+  expect(result.type).toBe("failed")
+  if (result.type === "failed") {
+    expect(result.error).toContain("429")
+    expect(result.error.toLowerCase()).toMatch(/verify|try again/)
+    expect(result.error).not.toContain("rejected")
+  }
+})
+
+test("a 500 response reports a verification or service failure that can be retried", async () => {
+  const stub = makeStub({ ok: false, status: 500, json: async () => ({}) })
+  const result = await createAuth({ fetchImpl: stub.fetchImpl }).methods[0].authorize({
+    apiKey: "server-error-key",
+  })
+  expect(result.type).toBe("failed")
+  if (result.type === "failed") {
+    expect(result.error).toContain("500")
+    expect(result.error.toLowerCase()).toMatch(/verify|try again/)
+    expect(result.error).not.toContain("rejected")
   }
 })
 
@@ -115,6 +144,7 @@ test("a 200 response with an unexpected shape fails", async () => {
   expect(result.type).toBe("failed")
   if (result.type === "failed") {
     expect(result.error.toLowerCase()).toContain("unexpected")
+    expect(result.error).not.toContain("rejected")
   }
 })
 
@@ -132,6 +162,7 @@ test("a 200 response with invalid JSON fails with an unexpected-shape error", as
   expect(result.type).toBe("failed")
   if (result.type === "failed") {
     expect(result.error.toLowerCase()).toContain("unexpected")
+    expect(result.error).not.toContain("rejected")
   }
 })
 
