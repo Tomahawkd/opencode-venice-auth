@@ -397,7 +397,7 @@ test("filter short-circuits in order and keeps only models that match no rule", 
     makeModel({ ...BASE_MODEL, id: "beta-only", betaModel: true }),
     makeModel({ ...BASE_MODEL, id: "deprecated-only", deprecated: true }),
     makeSimpleModel("e2ee-prefix-only"),
-    makeModel({ ...BASE_MODEL, id: "e2ee-flag-only", supportsE2EE: true }),
+    makeModel({ ...BASE_MODEL, id: "flagged-e2ee-only", supportsE2EE: true }),
     makeModel({ ...BASE_MODEL, id: "tee-flag-only", supportsTeeAttestation: true }),
     makeModel({
       ...BASE_MODEL,
@@ -408,6 +408,141 @@ test("filter short-circuits in order and keeps only models that match no rule", 
     makeSimpleModel("green-b"),
   ])
   expect(Object.keys(kept)).toEqual(["green-a", "green-b"])
+})
+
+interface ProbeFlags {
+  offline: boolean
+  betaModel: boolean
+  supportsFunctionCalling: boolean
+}
+
+interface ProbeModel {
+  model: VeniceModel
+  reads: string[]
+}
+
+type ProbeSpec = VeniceModel["model_spec"]
+type ProbeCapabilities = ProbeSpec["capabilities"]
+
+// Replaces a data property with a get accessor that records the read before
+// returning the value. The target keeps its concrete VeniceModel shape.
+function defineRead<T, K extends keyof T>(
+  target: T,
+  key: K,
+  label: string,
+  reads: string[],
+  read: () => T[K],
+): void {
+  Object.defineProperty(target, key, {
+    get: () => {
+      reads.push(label)
+      return read()
+    },
+    enumerable: true,
+    configurable: true,
+  })
+}
+
+function makeProbeCapabilities(
+  reads: string[],
+  supportsFunctionCalling: boolean,
+): ProbeCapabilities {
+  const capabilities: ProbeCapabilities = {
+    supportsFunctionCalling,
+    supportsVision: false,
+    supportsReasoning: false,
+    supportsAudioInput: false,
+    supportsE2EE: false,
+    supportsTeeAttestation: false,
+  }
+  defineRead(
+    capabilities,
+    "supportsFunctionCalling",
+    "supportsFunctionCalling",
+    reads,
+    () => supportsFunctionCalling,
+  )
+  defineRead(capabilities, "supportsE2EE", "supportsE2EE", reads, () => false)
+  defineRead(
+    capabilities,
+    "supportsTeeAttestation",
+    "supportsTeeAttestation",
+    reads,
+    () => false,
+  )
+  return capabilities
+}
+
+function makeProbeSpec(
+  id: string,
+  flags: ProbeFlags,
+  reads: string[],
+): ProbeSpec {
+  const spec: ProbeSpec = {
+    name: `Probe ${id}`,
+    offline: flags.offline,
+    betaModel: flags.betaModel,
+    deprecation: null,
+    availableContextTokens: 8192,
+    maxCompletionTokens: 4096,
+    capabilities: makeProbeCapabilities(reads, flags.supportsFunctionCalling),
+    pricing: { input: { usd: 1 }, output: { usd: 2 } },
+  }
+  const capabilities = spec.capabilities
+  defineRead(spec, "offline", "offline", reads, () => flags.offline)
+  defineRead(spec, "betaModel", "betaModel", reads, () => flags.betaModel)
+  defineRead(spec, "deprecation", "deprecation", reads, () => null)
+  defineRead(spec, "capabilities", "capabilities", reads, () => capabilities)
+  return spec
+}
+
+function makeProbeModel(id: string, flags: ProbeFlags): ProbeModel {
+  const reads: string[] = []
+  const model: VeniceModel = { id, model_spec: makeProbeSpec(id, flags, reads) }
+  return { model, reads }
+}
+
+test("filter stops an offline model before reading later fields", () => {
+  const probe = makeProbeModel("offline-probe", {
+    offline: true,
+    betaModel: true,
+    supportsFunctionCalling: false,
+  })
+  expect(filterAndMapModels([probe.model])).toEqual({})
+  expect(probe.reads).toContain("offline")
+  expect(probe.reads).not.toContain("betaModel")
+  expect(probe.reads).not.toContain("deprecation")
+  expect(probe.reads).not.toContain("capabilities")
+})
+
+test("filter stops an e2ee-prefixed model before reading the e2ee flags", () => {
+  const probe = makeProbeModel("e2ee-prefix-probe", {
+    offline: false,
+    betaModel: false,
+    supportsFunctionCalling: true,
+  })
+  expect(filterAndMapModels([probe.model])).toEqual({})
+  expect(probe.reads).toContain("offline")
+  expect(probe.reads).toContain("betaModel")
+  expect(probe.reads).toContain("deprecation")
+  expect(probe.reads).not.toContain("supportsE2EE")
+  expect(probe.reads).not.toContain("supportsTeeAttestation")
+})
+
+test("filter reads every earlier field before stopping on function calling", () => {
+  const probe = makeProbeModel("no-fc-probe", {
+    offline: false,
+    betaModel: false,
+    supportsFunctionCalling: false,
+  })
+  expect(filterAndMapModels([probe.model])).toEqual({})
+  expect(probe.reads).toContain("offline")
+  expect(probe.reads).toContain("betaModel")
+  expect(probe.reads).toContain("deprecation")
+  expect(probe.reads).toContain("capabilities")
+  expect(probe.reads).toContain("supportsE2EE")
+  expect(probe.reads).toContain("supportsTeeAttestation")
+  expect(probe.reads).toContain("supportsFunctionCalling")
 })
 
 test("mapping passes name, limits and prices through and keys by id", () => {
@@ -636,6 +771,93 @@ test("modelsResponseSchema rejects a broken pricing or optional field", () => {
     {
       label: "deprecation is a number",
       response: withSpec({ ...spec, deprecation: 3 }),
+    },
+  ]
+  for (const broken of cases) {
+    expect(
+      modelsResponseSchema.safeParse(broken.response).success,
+      broken.label,
+    ).toBe(false)
+  }
+})
+
+test("modelsResponseSchema rejects model_spec and capability type errors", () => {
+  const entry = fixtureEntry()
+  const spec = entry.model_spec
+  const capabilities = spec.capabilities
+  const withSpec = <T>(value: T) => withModelSpec(entry, value)
+  const withCapabilities = <T>(value: T) =>
+    withModelSpec(entry, { ...spec, capabilities: value })
+  expect(modelsResponseSchema.safeParse({ data: [entry] }).success).toBe(true)
+  const cases = [
+    {
+      label: "model_spec is a string",
+      response: withSpec("model_spec"),
+    },
+    {
+      label: "maxCompletionTokens is a string",
+      response: withSpec({ ...spec, maxCompletionTokens: "4096" }),
+    },
+    {
+      label: "supportsFunctionCalling is a number",
+      response: withCapabilities({ ...capabilities, supportsFunctionCalling: 1 }),
+    },
+    {
+      label: "supportsReasoning is a number",
+      response: withCapabilities({ ...capabilities, supportsReasoning: 1 }),
+    },
+    {
+      label: "supportsAudioInput is a number",
+      response: withCapabilities({ ...capabilities, supportsAudioInput: 1 }),
+    },
+    {
+      label: "supportsE2EE is a number",
+      response: withCapabilities({ ...capabilities, supportsE2EE: 1 }),
+    },
+    {
+      label: "supportsTeeAttestation is a number",
+      response: withCapabilities({ ...capabilities, supportsTeeAttestation: 1 }),
+    },
+    {
+      label: "capabilities is a string",
+      response: withCapabilities("capabilities"),
+    },
+  ]
+  for (const broken of cases) {
+    expect(
+      modelsResponseSchema.safeParse(broken.response).success,
+      broken.label,
+    ).toBe(false)
+  }
+})
+
+test("modelsResponseSchema rejects malformed pricing containers and absent usd", () => {
+  const entry = fixtureEntry()
+  const spec = entry.model_spec
+  const pricing = spec.pricing
+  const withPricing = <T>(value: T) =>
+    withModelSpec(entry, { ...spec, pricing: value })
+  expect(modelsResponseSchema.safeParse({ data: [entry] }).success).toBe(true)
+  const cases = [
+    {
+      label: "pricing is a string",
+      response: withPricing("pricing"),
+    },
+    {
+      label: "pricing.input is a string",
+      response: withPricing({ ...pricing, input: "2.5" }),
+    },
+    {
+      label: "pricing.output is a string",
+      response: withPricing({ ...pricing, output: "7.5" }),
+    },
+    {
+      label: "pricing.input.usd missing",
+      response: withPricing({ ...pricing, input: {} }),
+    },
+    {
+      label: "pricing.output.usd missing",
+      response: withPricing({ ...pricing, output: {} }),
     },
   ]
   for (const broken of cases) {
