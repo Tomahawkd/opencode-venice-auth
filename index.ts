@@ -1,5 +1,6 @@
 import { BASE } from "./src/venice"
 import { createAuth } from "./src/auth"
+import { createProviderModels } from "./src/models"
 
 interface ProviderEntry {
   name?: string
@@ -29,6 +30,7 @@ async function applyConfig(cfg: Config): Promise<void> {
 const server = async () => ({
   config: applyConfig,
   auth: createAuth(),
+  provider: { id: "venice", models: createProviderModels() },
 })
 
 export default { id: "opencode-venice-auth", server }
