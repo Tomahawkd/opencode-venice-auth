@@ -43,7 +43,14 @@ test("applyConfig fills name, npm and api for an empty config", async () => {
 
 test("applyConfig preserves a user name and extra fields while overriding npm and api", async () => {
   const cfg: TestConfig = {
-    provider: { venice: { name: "Mine", options: { x: 1 } } },
+    provider: {
+      venice: {
+        name: "Mine",
+        options: { x: 1 },
+        npm: "venice-ai-sdk-provider",
+        api: "https://venice.example/old",
+      },
+    },
   }
   await _internal.applyConfig(cfg)
   const entry = cfg.provider?.["venice"]

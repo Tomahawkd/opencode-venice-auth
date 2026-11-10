@@ -35,6 +35,14 @@ export type RateLimitsResult =
   | { ok: true; data: RateLimitsResponse }
   | { ok: false; status: number; detail?: string }
 
+// Endpoint-agnostic JSON value shared by fetch callers, so each response
+// shape can be parsed independently of the fetch abstraction.
+export type JsonScalar = string | number | boolean | null
+export interface JsonObject {
+  [key: string]: JsonValue
+}
+export type JsonValue = JsonScalar | JsonValue[] | JsonObject
+
 // Minimal fetch shape. Tests inject plain objects; the global fetch is
 // structurally compatible with it.
 export interface FetchOptions {
@@ -44,7 +52,7 @@ export interface FetchOptions {
 export interface FetchResponse {
   ok: boolean
   status: number
-  json: () => Promise<Partial<RateLimitsResponse>>
+  json: () => Promise<JsonValue>
 }
 
 export type FetchLike = (url: string, init?: FetchOptions) => Promise<FetchResponse>
@@ -57,7 +65,16 @@ export async function fetchRateLimits(
     headers: { authorization: `Bearer ${key}`, accept: "application/json" },
   })
   if (!res.ok) return { ok: false, status: res.status }
-  const parsed = rateLimitsResponseSchema.safeParse(await res.json())
+  let json: JsonValue
+  try {
+    json = await res.json()
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return { ok: false, status: res.status, detail: "unexpected response shape" }
+    }
+    throw error
+  }
+  const parsed = rateLimitsResponseSchema.safeParse(json)
   if (!parsed.success) {
     return { ok: false, status: res.status, detail: "unexpected response shape" }
   }

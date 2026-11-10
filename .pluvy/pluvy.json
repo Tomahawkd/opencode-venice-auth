@@ -13,8 +13,8 @@
           "name": "venice interface module stays independent of mapping modules",
           "sources": ["src/venice.ts"],
           "forbidden_imports": [
-            "src/models.ts", "src/usage.ts", "src/auth.ts",
-            "src.models", "src.usage", "src.auth"
+            "src/auth", "src/models", "src/usage",
+            "src/auth.ts", "src/models.ts", "src/usage.ts"
           ]
         }
       ]

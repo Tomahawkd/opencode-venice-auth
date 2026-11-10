@@ -99,6 +99,52 @@ test("a 200 response with an unexpected shape fails", async () => {
   }
 })
 
+test("a 200 response with invalid JSON fails with an unexpected-shape error", async () => {
+  const stub = makeStub({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new SyntaxError("Unexpected token")
+    },
+  })
+  const result = await createAuth({ fetchImpl: stub.fetchImpl }).methods[0].authorize({
+    apiKey: "invalid-json-key",
+  })
+  expect(result.type).toBe("failed")
+  if (result.type === "failed") {
+    expect(result.error.toLowerCase()).toContain("unexpected")
+  }
+})
+
+test("a 200 response with a deeply malformed body fails", async () => {
+  const stub = makeStub({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: { accessPermitted: "yes" } }),
+  })
+  const result = await createAuth({ fetchImpl: stub.fetchImpl }).methods[0].authorize({
+    apiKey: "malformed-shape-key",
+  })
+  expect(result.type).toBe("failed")
+  if (result.type === "failed") {
+    expect(result.error.toLowerCase()).toContain("unexpected")
+  }
+})
+
+test("a 200 response whose body read fails with a non-SyntaxError propagates", async () => {
+  const stub = makeStub({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new TypeError("read interrupted")
+    },
+  })
+  const method = createAuth({ fetchImpl: stub.fetchImpl }).methods[0]
+  await expect(
+    method.authorize({ apiKey: "interrupted-key" }),
+  ).rejects.toThrow("read interrupted")
+})
+
 test("a key without inference access fails with accessPermitted context", async () => {
   const denied = { data: { ...fixture.data, accessPermitted: false } }
   const stub = makeStub({ ok: true, status: 200, json: async () => denied })
