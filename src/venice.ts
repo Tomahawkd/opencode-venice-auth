@@ -2,6 +2,8 @@ import { z } from "zod"
 
 export const BASE = "https://api.venice.ai/api/v1"
 
+export const UNEXPECTED_RESPONSE_SHAPE = "unexpected response shape"
+
 // Schema aligned field by field with the official Venice OpenAPI document
 // (20261110.030206) for GET /api_keys/rate_limits.
 export const rateLimitsResponseSchema = z.object({
@@ -79,11 +81,11 @@ export async function fetchRateLimits(
   if (!res.ok) return { ok: false, status: res.status }
   const json = await readJsonBody(res)
   if (json === undefined) {
-    return { ok: false, status: res.status, detail: "unexpected response shape" }
+    return { ok: false, status: res.status, detail: UNEXPECTED_RESPONSE_SHAPE }
   }
   const parsed = rateLimitsResponseSchema.safeParse(json)
   if (!parsed.success) {
-    return { ok: false, status: res.status, detail: "unexpected response shape" }
+    return { ok: false, status: res.status, detail: UNEXPECTED_RESPONSE_SHAPE }
   }
   return { ok: true, data: parsed.data }
 }
@@ -141,11 +143,11 @@ export async function fetchModels(
   if (!res.ok) return { ok: false, status: res.status }
   const json = await readJsonBody(res)
   if (json === undefined) {
-    return { ok: false, status: res.status, detail: "unexpected response shape" }
+    return { ok: false, status: res.status, detail: UNEXPECTED_RESPONSE_SHAPE }
   }
   const parsed = modelsResponseSchema.safeParse(json)
   if (!parsed.success) {
-    return { ok: false, status: res.status, detail: "unexpected response shape" }
+    return { ok: false, status: res.status, detail: UNEXPECTED_RESPONSE_SHAPE }
   }
   return { ok: true, data: parsed.data }
 }

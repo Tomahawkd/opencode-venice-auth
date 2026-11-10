@@ -1,4 +1,4 @@
-import { fetchRateLimits } from "./venice"
+import { UNEXPECTED_RESPONSE_SHAPE, fetchRateLimits } from "./venice"
 import type { FetchLike, RateLimitsResponse } from "./venice"
 
 export interface UsageWindow {
@@ -65,7 +65,7 @@ export function mapUsageFailure(failure: {
   status: number
   detail?: string
 }): UsageFailure {
-  if (failure.detail === "unexpected response shape") {
+  if (failure.detail === UNEXPECTED_RESPONSE_SHAPE) {
     return {
       error: "Venice returned an unexpected usage response shape",
       windows: [],

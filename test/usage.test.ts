@@ -102,6 +102,14 @@ test("balance joins all present currencies in USD, DIEM, bundled credits order",
   expect("balance" in empty).toBe(false)
 })
 
+test("zero-valued USD balances are kept in the joined display", () => {
+  const withDiem = mapRateLimits(makeSample({ balances: { USD: 0, DIEM: 100 } }))
+  expect(withDiem.balance).toBe("$0 · 100 DIEM")
+
+  const usdOnly = mapRateLimits(makeSample({ balances: { USD: 0 } }))
+  expect(usdOnly.balance).toBe("$0")
+})
+
 test("rate limits become display-only windows and empty entries are skipped", () => {
   const result = mapRateLimits(
     makeSample({
