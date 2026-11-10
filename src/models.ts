@@ -22,6 +22,7 @@ export interface ModelCapabilitiesInput {
   pdf: boolean
   image: boolean
   audio: boolean
+  video: boolean
 }
 
 export interface ModelCapabilitiesOutput {
@@ -29,6 +30,7 @@ export interface ModelCapabilitiesOutput {
   image: boolean
   audio: boolean
   video: boolean
+  pdf: boolean
 }
 
 export interface ModelCapabilities {
@@ -117,12 +119,14 @@ function mapVeniceModel(model: VeniceModel): ModelEntry {
         pdf: false,
         image: capabilities.supportsVision,
         audio: capabilities.supportsAudioInput,
+        video: false,
       },
       output: {
         text: true,
         image: false,
         audio: false,
         video: false,
+        pdf: false,
       },
       temperature: true,
       interleaved: false,

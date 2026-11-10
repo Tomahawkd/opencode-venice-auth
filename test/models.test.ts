@@ -113,6 +113,11 @@ function makeSimpleModel(id: string): VeniceModel {
   return makeModel({ ...BASE_MODEL, id })
 }
 
+function omitField<T, K extends keyof T>(value: T, key: K): Omit<T, K> {
+  const { [key]: _removed, ...rest } = value
+  return rest
+}
+
 test("server exposes the venice provider with a models hook", async () => {
   const hooks = await _internal.server()
   expect(hooks.provider.id).toBe("venice")
@@ -249,8 +254,14 @@ test("snapshot mapping preserves a fully populated model", () => {
       reasoning: true,
       toolcall: true,
       attachment: true,
-      input: { text: true, pdf: false, image: true, audio: false },
-      output: { text: true, image: false, audio: false, video: false },
+      input: { text: true, pdf: false, image: true, audio: false, video: false },
+      output: {
+        text: true,
+        image: false,
+        audio: false,
+        video: false,
+        pdf: false,
+      },
       temperature: true,
       interleaved: false,
     },
@@ -368,6 +379,37 @@ test("filter drops a model without function calling", () => {
   expect(Object.keys(kept)).toEqual(["available"])
 })
 
+test("filter short-circuits in order and keeps only models that match no rule", () => {
+  const kept = filterAndMapModels([
+    makeModel({
+      ...BASE_MODEL,
+      id: "e2ee-triple-hit",
+      offline: true,
+      supportsFunctionCalling: false,
+    }),
+    makeModel({
+      ...BASE_MODEL,
+      id: "beta-deprecated-double-hit",
+      betaModel: true,
+      deprecated: true,
+    }),
+    makeModel({ ...BASE_MODEL, id: "offline-only", offline: true }),
+    makeModel({ ...BASE_MODEL, id: "beta-only", betaModel: true }),
+    makeModel({ ...BASE_MODEL, id: "deprecated-only", deprecated: true }),
+    makeSimpleModel("e2ee-prefix-only"),
+    makeModel({ ...BASE_MODEL, id: "e2ee-flag-only", supportsE2EE: true }),
+    makeModel({ ...BASE_MODEL, id: "tee-flag-only", supportsTeeAttestation: true }),
+    makeModel({
+      ...BASE_MODEL,
+      id: "no-function-calling-only",
+      supportsFunctionCalling: false,
+    }),
+    makeSimpleModel("green-a"),
+    makeSimpleModel("green-b"),
+  ])
+  expect(Object.keys(kept)).toEqual(["green-a", "green-b"])
+})
+
 test("mapping passes name, limits and prices through and keys by id", () => {
   const kept = filterAndMapModels([
     makeModel({
@@ -390,25 +432,23 @@ test("mapping passes name, limits and prices through and keys by id", () => {
     status: "active",
     release_date: "",
     limit: { context: 1000000, output: 131072 },
-    cost: {
-      input: 2.5,
-      output: 7.5,
-      cache: { read: 0.3125, write: 3.125 },
-    },
+    cost: { input: 2.5, output: 7.5, cache: { read: 0.3125, write: 3.125 } },
     capabilities: {
       reasoning: true,
       toolcall: true,
       attachment: false,
-      input: { text: true, pdf: false, image: false, audio: false },
-      output: { text: true, image: false, audio: false, video: false },
+      input: {
+        text: true,
+        pdf: false,
+        image: false,
+        audio: false,
+        video: false,
+      },
+      output: { text: true, image: false, audio: false, video: false, pdf: false },
       temperature: true,
       interleaved: false,
     },
-    api: {
-      id: "values",
-      url: BASE,
-      npm: "@ai-sdk/openai-compatible",
-    },
+    api: { id: "values", url: BASE, npm: "@ai-sdk/openai-compatible" },
     options: {},
     headers: {},
   })
@@ -426,42 +466,184 @@ test("mapping builds input capability booleans from the flags", () => {
       supportsAudioInput: true,
     }),
   ])
-  expect(kept["plain"]?.capabilities.input).toEqual({
-    text: true,
-    pdf: false,
-    image: false,
-    audio: false,
-  })
-  expect(kept["vision"]?.capabilities.input).toEqual({
-    text: true,
-    pdf: false,
-    image: true,
-    audio: false,
-  })
-  expect(kept["audio"]?.capabilities.input).toEqual({
-    text: true,
-    pdf: false,
-    image: false,
-    audio: true,
-  })
-  expect(kept["both"]?.capabilities.input).toEqual({
-    text: true,
-    pdf: false,
-    image: true,
-    audio: true,
-  })
-  expect(kept["plain"]?.capabilities.attachment).toBe(
-    kept["plain"]?.capabilities.input.image,
-  )
-  expect(kept["vision"]?.capabilities.attachment).toBe(
-    kept["vision"]?.capabilities.input.image,
-  )
-  expect(kept["audio"]?.capabilities.attachment).toBe(
-    kept["audio"]?.capabilities.input.image,
-  )
-  expect(kept["both"]?.capabilities.attachment).toBe(
-    kept["both"]?.capabilities.input.image,
-  )
+  const expectedInputs = [
+    { id: "plain", image: false, audio: false },
+    { id: "vision", image: true, audio: false },
+    { id: "audio", image: false, audio: true },
+    { id: "both", image: true, audio: true },
+  ]
+  for (const expected of expectedInputs) {
+    expect(kept[expected.id]?.capabilities.input).toEqual({
+      text: true,
+      pdf: false,
+      image: expected.image,
+      audio: expected.audio,
+      video: false,
+    })
+    expect(kept[expected.id]?.capabilities.attachment).toBe(expected.image)
+  }
+  for (const entry of Object.values(kept)) {
+    expect(entry.capabilities.output).toEqual({
+      text: true,
+      image: false,
+      audio: false,
+      video: false,
+      pdf: false,
+    })
+  }
+})
+
+function fixtureEntry(): VeniceModel {
+  return modelsResponseSchema.parse(fixture).data[0]
+}
+
+function withModelSpec<T>(entry: VeniceModel, modelSpec: T) {
+  return { data: [{ ...entry, model_spec: modelSpec }] }
+}
+
+test("modelsResponseSchema rejects a broken top-level or model_spec field", () => {
+  const entry = fixtureEntry()
+  const spec = entry.model_spec
+  expect(modelsResponseSchema.safeParse({ data: [entry] }).success).toBe(true)
+  const cases = [
+    { label: "data missing", response: {} },
+    { label: "data is not an array", response: { data: {} } },
+    { label: "id missing", response: { data: [omitField(entry, "id")] } },
+    { label: "id is a number", response: { data: [{ ...entry, id: 7 }] } },
+    {
+      label: "model_spec missing",
+      response: { data: [omitField(entry, "model_spec")] },
+    },
+    {
+      label: "name missing",
+      response: withModelSpec(entry, omitField(spec, "name")),
+    },
+    {
+      label: "name is a number",
+      response: withModelSpec(entry, { ...spec, name: 7 }),
+    },
+    {
+      label: "offline missing",
+      response: withModelSpec(entry, omitField(spec, "offline")),
+    },
+    {
+      label: "offline is a string",
+      response: withModelSpec(entry, { ...spec, offline: "false" }),
+    },
+    {
+      label: "availableContextTokens missing",
+      response: withModelSpec(entry, omitField(spec, "availableContextTokens")),
+    },
+    {
+      label: "availableContextTokens is null",
+      response: withModelSpec(entry, {
+        ...spec,
+        availableContextTokens: null,
+      }),
+    },
+    { label: "maxCompletionTokens missing", response: withModelSpec(entry, omitField(spec, "maxCompletionTokens")) },
+  ]
+  for (const broken of cases) {
+    expect(
+      modelsResponseSchema.safeParse(broken.response).success,
+      broken.label,
+    ).toBe(false)
+  }
+})
+
+test("modelsResponseSchema rejects a broken capability field", () => {
+  const entry = fixtureEntry()
+  const spec = entry.model_spec
+  const capabilities = spec.capabilities
+  const withCapabilities = <T>(value: T) =>
+    withModelSpec(entry, { ...spec, capabilities: value })
+  const cases = [
+    { label: "capabilities missing", response: withModelSpec(entry, omitField(spec, "capabilities")) },
+    {
+      label: "supportsFunctionCalling missing",
+      response: withCapabilities(
+        omitField(capabilities, "supportsFunctionCalling"),
+      ),
+    },
+    {
+      label: "supportsVision is a number",
+      response: withCapabilities({ ...capabilities, supportsVision: 1 }),
+    },
+    {
+      label: "supportsReasoning missing",
+      response: withCapabilities(omitField(capabilities, "supportsReasoning")),
+    },
+    {
+      label: "supportsAudioInput missing",
+      response: withCapabilities(omitField(capabilities, "supportsAudioInput")),
+    },
+    {
+      label: "supportsE2EE missing",
+      response: withCapabilities(omitField(capabilities, "supportsE2EE")),
+    },
+    {
+      label: "supportsTeeAttestation missing",
+      response: withCapabilities(
+        omitField(capabilities, "supportsTeeAttestation"),
+      ),
+    },
+  ]
+  for (const broken of cases) {
+    expect(
+      modelsResponseSchema.safeParse(broken.response).success,
+      broken.label,
+    ).toBe(false)
+  }
+})
+
+test("modelsResponseSchema rejects a broken pricing or optional field", () => {
+  const entry = fixtureEntry()
+  const spec = entry.model_spec
+  const pricing = spec.pricing
+  const withSpec = <T>(value: T) => withModelSpec(entry, value)
+  const withPricing = <T>(value: T) =>
+    withModelSpec(entry, { ...spec, pricing: value })
+  const cases = [
+    { label: "pricing missing", response: withSpec(omitField(spec, "pricing")) },
+    {
+      label: "pricing.input missing",
+      response: withPricing(omitField(pricing, "input")),
+    },
+    {
+      label: "pricing.input.usd is a string",
+      response: withPricing({ ...pricing, input: { usd: "2.5" } }),
+    },
+    {
+      label: "pricing.output missing",
+      response: withPricing(omitField(pricing, "output")),
+    },
+    {
+      label: "pricing.output.usd is a boolean",
+      response: withPricing({ ...pricing, output: { usd: false } }),
+    },
+    {
+      label: "pricing.cache_input.usd is a boolean",
+      response: withPricing({ ...pricing, cache_input: { usd: true } }),
+    },
+    {
+      label: "pricing.cache_write.usd is a string",
+      response: withPricing({ ...pricing, cache_write: { usd: "free" } }),
+    },
+    {
+      label: "betaModel is a string",
+      response: withSpec({ ...spec, betaModel: "yes" }),
+    },
+    {
+      label: "deprecation is a number",
+      response: withSpec({ ...spec, deprecation: 3 }),
+    },
+  ]
+  for (const broken of cases) {
+    expect(
+      modelsResponseSchema.safeParse(broken.response).success,
+      broken.label,
+    ).toBe(false)
+  }
 })
 
 test("hook returns the existing list when no api key is available", async () => {
