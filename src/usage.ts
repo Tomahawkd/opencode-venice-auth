@@ -34,12 +34,13 @@ export type UsageAuth = UsageApiKeyAuth | UsageOauthAuth
 function formatBalance(
   balances: RateLimitsResponse["data"]["balances"],
 ): string | undefined {
-  if (balances.USD !== undefined) return `$${balances.USD}`
-  if (balances.DIEM !== undefined) return `${balances.DIEM} DIEM`
+  const parts: string[] = []
+  if (balances.USD !== undefined) parts.push(`$${balances.USD}`)
+  if (balances.DIEM !== undefined) parts.push(`${balances.DIEM} DIEM`)
   if (balances.BUNDLED_CREDITS !== undefined) {
-    return `${balances.BUNDLED_CREDITS} BUNDLED_CREDITS`
+    parts.push(`${balances.BUNDLED_CREDITS} BUNDLED_CREDITS`)
   }
-  return undefined
+  return parts.length > 0 ? parts.join(" · ") : undefined
 }
 
 export function mapRateLimits(data: RateLimitsResponse): UsageSuccess {

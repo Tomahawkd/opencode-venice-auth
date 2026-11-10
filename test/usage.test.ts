@@ -50,7 +50,7 @@ function apiAuth(key: string): () => Promise<UsageAuth> {
 }
 
 const FIXTURE_REPORT: UsageSuccess = {
-  balance: "$50.23",
+  balance: "$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS",
   until: "2025-06-01T00:00:00.000Z",
   windows: [{ name: "zai-org-glm-5-1", display: "100 RPM" }],
 }
@@ -81,14 +81,17 @@ test("the fixture maps to balance, expiration and display-only windows", async (
 test("a null key expiration leaves until absent", () => {
   const result = mapRateLimits(makeSample({ keyExpiration: null }))
   expect("until" in result).toBe(false)
-  expect(result.balance).toBe("$50.23")
+  expect(result.balance).toBe("$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS")
 })
 
-test("balance falls back from USD to DIEM to bundled credits with unit labels", () => {
-  const diem = mapRateLimits(
+test("balance joins all present currencies in USD, DIEM, bundled credits order", () => {
+  const all = mapRateLimits(makeSample())
+  expect(all.balance).toBe("$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS")
+
+  const withoutUsd = mapRateLimits(
     makeSample({ balances: { DIEM: 100.023, BUNDLED_CREDITS: 25 } }),
   )
-  expect(diem.balance).toBe("100.023 DIEM")
+  expect(withoutUsd.balance).toBe("100.023 DIEM · 25 BUNDLED_CREDITS")
 
   const credits = mapRateLimits(
     makeSample({ balances: { BUNDLED_CREDITS: 25 } }),
@@ -192,6 +195,7 @@ test("a 200 response with invalid JSON maps to the unexpected-shape error", asyn
       "Venice returned an unexpected usage response shape",
     )
     expect("signIn" in result).toBe(false)
+    expect(result.windows).toEqual([])
   }
 })
 
