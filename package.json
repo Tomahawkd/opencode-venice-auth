@@ -6,6 +6,11 @@
   "main": "./index.ts",
   "exports": { ".": "./index.ts" },
   "keywords": ["opencode", "opencode-plugin", "magpie", "venice"],
+  "author": "Tomahawkd",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tomahawkd/opencode-venice-auth.git"
+  },
   "license": "MIT",
   "scripts": {
     "test": "bun test",
