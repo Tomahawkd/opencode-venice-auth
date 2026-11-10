@@ -1,0 +1,12 @@
+{
+  "data": {
+    "accessPermitted": true,
+    "apiTier": { "id": "paid", "isCharged": true },
+    "balances": { "USD": 50.23, "DIEM": 100.023, "BUNDLED_CREDITS": 25 },
+    "keyExpiration": "2025-06-01T00:00:00.000Z",
+    "nextEpochBegins": "2025-05-07T00:00:00.000Z",
+    "rateLimits": [
+      { "apiModelId": "zai-org-glm-5-1", "rateLimits": [ { "amount": 100, "type": "RPM" } ] }
+    ]
+  }
+}
