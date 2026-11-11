@@ -75,8 +75,6 @@ jobs:
       - name: Dry-run staging
         if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           npm stage publish ./ --dry-run 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
@@ -87,4 +85,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          npm stage list 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          npm stage list opencode-venice-auth 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

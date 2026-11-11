@@ -9,10 +9,10 @@
 - [ ] 真实 key 登录后补测 `magpie provider test venice`，可用则补回 README Install 段。
 - [ ] GitHub Actions 在待发布的 HEAD 上为绿。
 - [ ] `package.json` 的版本号已按语义化版本提升（初始为 `0.1.0`，发布前按需提升；不要复用已发布的版本号）。
-- [ ] 创建 GitHub Release：确认 `package.json` 的 `version` 与拟发布版本一致后，执行 `gh release create vX.Y.Z`（把 `X.Y.Z` 换成实际版本号；tag 必须与 `package.json` 的 `version` 一致）。Release 发布后流水线自动执行 `publish` job 完成 npm staging。
 - [ ] `LICENSE`、`repository`、`author` 字段在场且正确。
 - [ ] `npm pack --dry-run` 内容检查：应恰好 8 个文件——`index.ts`、`src/` 下 `auth`、`models`、`usage`、`venice` 四个文件、`README.md`、`LICENSE`、`package.json`；不得出现 `docs/` 过程文档、`test/`、`AGENTS.md`、`.pluvy/`、`.github/`、`bun.lock`、`tsconfig.json`。
 - [ ] 密钥扫描：仓库和待发布包内没有 token、API key 或其他凭据。
+- [ ] 创建 GitHub Release：确认已完成 §2.2 的发版步骤，即 push 后 `checks` 为绿且已通过 `workflow_dispatch` dry-run 预演，并确认 `package.json` 的 `version` 与拟发布版本一致，再执行 `gh release create vX.Y.Z`（把 `X.Y.Z` 换成实际版本号；tag 必须与 `package.json` 的 `version` 一致）。Release 发布后流水线自动执行 `publish` job 完成 npm staging。
 
 ## 2. 流水线发布路径
 
@@ -21,7 +21,7 @@ npm 发布由 GitHub Actions 的 `publish` job 执行：先用 `npm stage publis
 ### 2.1 一次性前置
 
 1. 在 GitHub 仓库配置 `NPM_TOKEN` secret：`Settings → Secrets and variables → Actions → New repository secret`。首发时 npm 上还没有 `opencode-venice-auth`，无法创建仅限本包的 token，因此首发使用**全部包范围**的 token。发布成功后立即收窄：
-   1. 在 npm 账户创建仅限 `opencode-venice-auth` 的 token；
+   1. 在 npm 账户创建仅限 `opencode-venice-auth` 的 granular token：**不要开启 bypass 2FA**，写权限只选 **stage only**——这两项是 token 存放在 GitHub secret 期间限制泄漏后果的主要手段；
    2. 用新 token 更新 GitHub Actions 的 `NPM_TOKEN` secret；
    3. 撤销宽范围 token。
 2. 维护者本机执行 `npm login`：`npm stage list/view/download/approve` 使用本机登录态。
@@ -29,15 +29,20 @@ npm 发布由 GitHub Actions 的 `publish` job 执行：先用 `npm stage publis
 
 ### 2.2 发版步骤
 
+按以下编号顺序完成，不得跳过：
+
 1. 提升 `package.json` 的 `version` 并提交。
 2. push 到 `main`，等待 CI 的 `checks` job 为绿。
-3. 创建并发布 GitHub Release，tag 必须与 `package.json` 的 `version` 完全一致：`gh release create vX.Y.Z`（把 `X.Y.Z` 换成实际版本号）。Release 发布后流水线自动执行 `publish` job：先做版本一致性硬校验，再运行 `npm stage publish ./`；成功后 stage 处于待 approve 状态。
+3. **必须做 `workflow_dispatch` dry-run 预演**：执行
 
-正式发版前可手动触发 `workflow_dispatch` 做 dry-run 预演（`publish` job 以 `--dry-run` 运行，不占版本号，npm 上保持未发布）：
+   ```sh
+   gh workflow run ci.yml --ref main
+   ```
 
-```sh
-gh workflow run ci.yml --ref main
-```
+   等待 `publish` job 成功，并确认 npm 上包仍未发布（仍为 404）。预演失败不得进入下一步。dry-run 不占版本号，也不上传内容；版本一旦发布，同版本的 dry-run 会失败，因此预演必须在创建 Release 之前完成。
+4. 创建并发布 GitHub Release，tag 必须与 `package.json` 的 `version` 完全一致：`gh release create vX.Y.Z`（把 `X.Y.Z` 换成实际版本号）。Release 发布后流水线自动执行 `publish` job：先做版本一致性硬校验，再运行 `npm stage publish ./`；成功后 stage 处于待 approve 状态。
+
+> 包首次发布（npm 上尚不存在该包）时，第 4 步的 `npm stage publish` 会**立即在 npm 上公开创建包**，并出现一个 `0.0.0-stage` 占位版本；真实版本内容在维护者 approve 之前不会公开。
 
 ### 2.3 核对与 approve 操作
 
@@ -71,10 +76,15 @@ npm stage reject <stage-id>
 
 ### 2.4 失败处理
 
-- **版本不一致**：流水线版本校验输出 `::error` 并以非 0 退出。对齐 `package.json` 版本与 tag 后重新创建 Release，或在 Actions 页面重跑 `publish` job。
-- **staging 失败**：在 Actions 页面重跑 `publish` job。若 workflow 本身有错，需要新提交修复后再走发版流程；Release 上的重跑使用 tag 提交时的旧 workflow，这也是正式发版前必须先做 `workflow_dispatch` dry-run 预演的原因。
+- **版本不一致**：流水线版本校验输出 `::error` 并以非 0 退出。不要在 Actions 页面重跑——重跑沿用原事件的提交与原 tag，必然再次失败。按以下顺序补救：
+  1. `gh release delete vX.Y.Z --cleanup-tag` 删除 Release 与指向旧提交的 tag；
+  2. 对齐 `package.json` 的 `version` 与拟发布的 tag 版本并 push 到 `main`，等待 `checks` 为绿；
+  3. 用对齐后的 tag 重新创建 Release：`gh release create vX.Y.Z`。
+- **staging 失败**：job 失败不代表 staging 未生效——若 `npm stage publish` 已成功、后续步骤（如 stage list）失败，npm 远端已有该 staging 产物。重跑前先在本机执行 `npm stage list` 或查看该次 run 的 summary 确认状态，不要盲目重跑（同版本重复 staging 会被拒绝）。若确认 staging 未产生且 workflow 本身无误，才在 Actions 页面重跑 `publish` job。若 workflow 本身有错，需要新提交修复并 push；推送后同样要 `gh release delete vX.Y.Z --cleanup-tag` 清掉指向旧提交的 Release 与 tag，再在新提交上重新创建 Release——直接在旧 Release 上重跑，用的是 tag 提交时的旧 workflow。这也是 §2.2 要求正式发版前必须先做 `workflow_dispatch` dry-run 预演的原因。
 - **内容不对**：执行 `npm stage reject <stage-id>`，修正后重新走发版流程。
-- **首发回退**：在 npm 的 unpublish 窗口内（发布后 72 小时内，且无其他包依赖该版本），可用 `npm unpublish opencode-venice-auth@X.Y.Z` 撤销刚发布的版本；若整个包尚未被使用，也可用 `npm unpublish opencode-venice-auth --force` 撤销包。操作需要本机 npm 登录与 2FA；超出窗口时只能发布修复版本，具体限制以 npm 当时文档为准。
+- **首发回退**：npm 现行政策下，满足额外条件的包即使在发布 72 小时之后仍可能允许撤回，具体以 npm 当时的 unpublish 政策文档为准。可用 `npm unpublish opencode-venice-auth@X.Y.Z` 撤销刚发布的单个版本；若整个包尚未被使用，也可用 `npm unpublish opencode-venice-auth --force` 撤销整个包。**撤回后的版本号不可复用**，不能再次发布同一版本号。操作需要本机 npm 登录与 2FA；不满足撤回条件时只能发布修复版本。
+
+  reject 或单版本 unpublish 之后，包名仍被 `0.0.0-stage` 占位版本占用；若要彻底撤回整个包，需执行 `npm unpublish opencode-venice-auth --force`。
 
 ## 3. 社区 registry.json PR 路径
 
