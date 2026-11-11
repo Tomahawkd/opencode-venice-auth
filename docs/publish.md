@@ -24,7 +24,9 @@ npm 发布由 GitHub Actions 的 `publish` job 执行：先用 `npm stage publis
    1. 在 npm 账户创建仅限 `opencode-venice-auth` 的 granular token，同样**不要开启 bypass 2FA**、写权限只选 **stage only**；
    2. 用新 token 更新 GitHub Actions 的 `NPM_TOKEN` secret；
    3. 撤销宽范围 token。
-2. 维护者本机执行 `npm login`：`npm stage list/view/download/approve` 使用本机登录态。
+
+   npm 的可写 granular token 有默认有效期（按 npm 现行政策），到期即失效。应在到期前轮换，顺序与上面的收窄三步相同：创建新 token → 更新 GitHub Actions 的 `NPM_TOKEN` secret → 撤销旧 token。若 Release 运行中 staging 步骤报 401，即为 token 过期或失效的信号：先按此顺序轮换并更新 secret，再按 §2.4「staging 失败」条目处置。
+2. 维护者本机准备 `npm login`：本机 Node 与 npm 版本需满足 `npm stage` 系列命令的要求（Node ≥ 22.14.0、npm ≥ 11.15.0，依据 npm 官方文档；CI 侧由 setup-node 的 Node 26 保证），然后执行 `npm login`；`npm stage list/view/download/approve` 使用本机登录态。
 3. npm 账户启用 2FA：`npm stage approve` 需要 2FA 设备确认。
 
 ### 2.2 发版步骤
@@ -80,8 +82,9 @@ npm stage reject <stage-id>
   1. `gh release delete vX.Y.Z --cleanup-tag` 删除 Release 与指向旧提交的 tag；
   2. 对齐 `package.json` 的 `version` 与拟发布的 tag 版本并 push 到 `main`；
   3. 回到 §2.2 第 2 步重新走完整发版步骤（等待 `checks` 为绿，并重新做第 3 步 dry-run 预演）；预演通过后再用对齐后的 tag 创建 Release：`gh release create vX.Y.Z`。
-- **staging 失败**：job 失败不代表 staging 未生效——若 `npm stage publish` 已成功、后续步骤（如 stage list）失败，npm 远端已有该 staging 产物。重跑前先在本机执行 `npm stage list` 或查看该次 run 的 summary 确认状态，不要盲目重跑（同版本重复 staging 会被拒绝）。若确认 staging 未产生且 workflow 本身无误，才在 Actions 页面重跑 `publish` job。若 workflow 本身有错，需要新提交修复并 push；推送后同样要 `gh release delete vX.Y.Z --cleanup-tag` 清掉指向旧提交的 Release 与 tag，然后回到 §2.2 第 2 步重新走完整发版步骤（含重新 dry-run 预演），预演通过后再在新提交上重新创建 Release——直接在旧 Release 上重跑，用的是 tag 提交时的旧 workflow。这也是 §2.2 要求正式发版前必须先做 `workflow_dispatch` dry-run 预演的原因。
+- **staging 失败**：job 失败不代表 staging 未生效——若 `npm stage publish` 已成功、job 随后因其他原因失败，npm 远端已有该 staging 产物。重跑前先在本机执行 `npm stage list` 或查看该次 run 的 summary 确认状态，不要盲目重跑（同版本重复 staging 会被拒绝）。若确认 staging 未产生且 workflow 本身无误，才在 Actions 页面重跑 `publish` job。若 workflow 本身有错，需要新提交修复并 push；推送后同样要 `gh release delete vX.Y.Z --cleanup-tag` 清掉指向旧提交的 Release 与 tag，然后回到 §2.2 第 2 步重新走完整发版步骤（含重新 dry-run 预演），预演通过后再在新提交上重新创建 Release——直接在旧 Release 上重跑，用的是 tag 提交时的旧 workflow。这也是 §2.2 要求正式发版前必须先做 `workflow_dispatch` dry-run 预演的原因。
 - **内容不对**：执行 `npm stage reject <stage-id>`，修正后重新走发版流程。
+- **approve 之后才发现严重问题**：此时 staging 已公开为正式版本，无法再 reject，只能发布修复版本，或按下方「首发回退」的撤回路径执行 `npm unpublish`。按 npm 现行政策，整个包执行 `npm unpublish ... --force` 后 24 小时内禁止以同名重新发布（此口径需在发版时按 npm 当时的官方文档再核对）。注意这与单个版本撤回后「版本号不可复用」是两回事：24 小时同名重发禁令针对整包撤回后重建同名包，单版本撤回不影响其他版本号的使用。
 - **首发回退**：npm 现行政策下，满足额外条件的包即使在发布 72 小时之后仍可能允许撤回，具体以 npm 当时的 unpublish 政策文档为准。可用 `npm unpublish opencode-venice-auth@X.Y.Z` 撤销刚发布的单个版本；若整个包尚未被使用，也可用 `npm unpublish opencode-venice-auth --force` 撤销整个包。**撤回后的版本号不可复用**，不能再次发布同一版本号。操作需要本机 npm 登录与 2FA；不满足撤回条件时只能发布修复版本。
 
   reject 或单版本 unpublish 之后，包名仍被 `0.0.0-stage` 占位版本占用；若要彻底撤回整个包，需执行 `npm unpublish opencode-venice-auth --force`。
