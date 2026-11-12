@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createAuth } from "../src/auth"
-import { createUsage, mapRateLimits } from "../src/usage"
+import { createUsage, mapRateLimits, resolvePlan } from "../src/usage"
 import type { UsageAuth, UsageSuccess } from "../src/usage"
 import { BASE } from "../src/venice"
 import type { FetchLike, FetchResponse, RateLimitsResponse } from "../src/venice"
@@ -45,14 +45,29 @@ function makeSample(overrides: SampleOverrides = {}): RateLimitsResponse {
   }
 }
 
+function walletSample(
+  balances: RateLimitsResponse["data"]["balances"],
+): RateLimitsResponse {
+  return makeSample({ balances, rateLimits: [] })
+}
+
 function apiAuth(key: string): () => Promise<UsageAuth> {
   return async () => ({ type: "api", key })
 }
 
 const FIXTURE_REPORT: UsageSuccess = {
-  balance: "$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS",
   until: "2025-06-01T00:00:00.000Z",
-  windows: [{ name: "per-model RPM", display: "100 across 1 model" }],
+  windows: [
+    {
+      name: "Daily DIEM",
+      balance: 100.023,
+      unit: "DIEM",
+      resetsAt: "2025-05-07T00:00:00.000Z",
+    },
+    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "API balance", balance: 50.23, unit: "USD" },
+    { name: "per-model RPM", display: "100 across 1 model" },
+  ],
 }
 
 test("createAuth exposes a usage hook that runs through the injected fetch", async () => {
@@ -81,38 +96,88 @@ test("the fixture maps to balance, expiration and display-only windows", async (
 test("a null key expiration leaves until absent", () => {
   const result = mapRateLimits(makeSample({ keyExpiration: null }))
   expect("until" in result).toBe(false)
-  expect(result.balance).toBe("$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS")
+  expect(result.windows).toEqual([
+    {
+      name: "Daily DIEM",
+      balance: 100.023,
+      unit: "DIEM",
+      resetsAt: "2025-05-07T00:00:00.000Z",
+    },
+    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "API balance", balance: 50.23, unit: "USD" },
+    { name: "per-model RPM", display: "100 across 1 model" },
+  ])
 })
 
-test("balance joins all present currencies in USD, DIEM, bundled credits order", () => {
-  const all = mapRateLimits(makeSample())
-  expect(all.balance).toBe("$50.23 · 100.023 DIEM · 25 BUNDLED_CREDITS")
-
-  const withoutUsd = mapRateLimits(
-    makeSample({ balances: { DIEM: 100.023, BUNDLED_CREDITS: 25 } }),
+test("windows follow the Venice charge order and carry currency-specific fields", () => {
+  const result = mapRateLimits(
+    makeSample({
+      rateLimits: [
+        { rateLimits: [{ amount: 50, type: "RPM" }] },
+        {
+          apiModelId: "model-a",
+          rateLimits: [{ amount: 100, type: "RPM" }],
+        },
+      ],
+    }),
+    resolvePlan({ plan: "gold" }),
   )
-  expect(withoutUsd.balance).toBe("100.023 DIEM · 25 BUNDLED_CREDITS")
 
-  const credits = mapRateLimits(
-    makeSample({ balances: { BUNDLED_CREDITS: 25 } }),
-  )
-  expect(credits.balance).toBe("25 BUNDLED_CREDITS")
-
-  const empty = mapRateLimits(makeSample({ balances: {} }))
-  expect("balance" in empty).toBe(false)
+  expect(result.windows).toEqual([
+    {
+      name: "Daily DIEM",
+      balance: 100.023,
+      unit: "DIEM",
+      resetsAt: "2025-05-07T00:00:00.000Z",
+    },
+    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "API balance", balance: 50.23, unit: "USD" },
+    { name: "all models", display: "50 RPM" },
+    { name: "per-model RPM", display: "100 across 1 model" },
+    {
+      name: "plan option",
+      display: "not recognized; use pro, plus or max",
+    },
+  ])
+  expect("plan" in result).toBe(false)
 })
 
-test("zero-valued USD balances are kept in the joined display", () => {
-  const withDiem = mapRateLimits(makeSample({ balances: { USD: 0, DIEM: 100 } }))
-  expect(withDiem.balance).toBe("$0 · 100 DIEM")
+test("zero and missing balances follow the per-currency visibility rules", () => {
+  const zeroes = mapRateLimits(
+    walletSample({ USD: 0, DIEM: 0, BUNDLED_CREDITS: 0 }),
+  )
+  expect(zeroes.windows).toEqual([{ name: "API balance", balance: 0, unit: "USD" }])
 
-  const usdOnly = mapRateLimits(makeSample({ balances: { USD: 0 } }))
-  expect(usdOnly.balance).toBe("$0")
+  const negativeUsd = mapRateLimits(walletSample({ USD: -3.5 }))
+  expect(negativeUsd.windows).toEqual([
+    { name: "API balance", balance: 0, unit: "USD" },
+  ])
+
+  const missingUsd = mapRateLimits(
+    walletSample({ DIEM: 0, BUNDLED_CREDITS: 25 }),
+  )
+  expect(missingUsd.windows).toEqual([
+    { name: "Plan credits", balance: 25, unit: "credits" },
+  ])
+})
+
+test("Daily DIEM appears only above zero and resets at the next epoch", () => {
+  const present = mapRateLimits(walletSample({ DIEM: 100.023, USD: 1 }))
+  expect(present.windows[0]).toEqual({
+    name: "Daily DIEM",
+    balance: 100.023,
+    unit: "DIEM",
+    resetsAt: "2025-05-07T00:00:00.000Z",
+  })
+
+  const zero = mapRateLimits(walletSample({ DIEM: 0, USD: 1 }))
+  expect(zero.windows).toEqual([{ name: "API balance", balance: 1, unit: "USD" }])
 })
 
 test("rate limits become display-only windows and empty entries are skipped", () => {
   const result = mapRateLimits(
     makeSample({
+      balances: {},
       rateLimits: [
         {
           apiModelId: "model-a",
@@ -132,13 +197,14 @@ test("rate limits become display-only windows and empty entries are skipped", ()
     { name: "per-model TPM", display: "10000 across 1 model" },
   ])
 
-  const none = mapRateLimits(makeSample({ rateLimits: [] }))
+  const none = mapRateLimits(makeSample({ balances: {}, rateLimits: [] }))
   expect(none.windows).toEqual([])
 })
 
 test("per-model windows fold multiple models into per-type min-max summaries", () => {
   const result = mapRateLimits(
     makeSample({
+      balances: {},
       rateLimits: [
         {
           apiModelId: "model-a",
@@ -170,6 +236,7 @@ test("per-model windows fold multiple models into per-type min-max summaries", (
 test("equal caps across multiple models use the plural summary", () => {
   const result = mapRateLimits(
     makeSample({
+      balances: {},
       rateLimits: [
         {
           apiModelId: "model-a",
@@ -190,6 +257,7 @@ test("equal caps across multiple models use the plural summary", () => {
 test("account-level caps stay ahead of per-model summaries regardless of order", () => {
   const result = mapRateLimits(
     makeSample({
+      balances: {},
       rateLimits: [
         {
           apiModelId: "model-a",
@@ -217,6 +285,7 @@ test("account-level caps stay ahead of per-model summaries regardless of order",
 test("empty entries do not count toward a type's model total", () => {
   const result = mapRateLimits(
     makeSample({
+      balances: {},
       rateLimits: [
         {
           apiModelId: "model-a",
@@ -247,12 +316,179 @@ test("hundreds of model entries collapse to one window per limit type", () => {
           ]
         : [{ amount: 100, type: "RPM" }],
   }))
-  const result = mapRateLimits(makeSample({ rateLimits }))
+  const result = mapRateLimits(makeSample({ balances: {}, rateLimits }))
   expect(result.windows).toHaveLength(2)
   expect(result.windows).toEqual([
     { name: "per-model RPM", display: "100 across 251 models" },
     { name: "per-model TPM", display: "10000 across 200 models" },
   ])
+})
+
+test("plan credits without a tier are a wallet window shown only above zero", () => {
+  const positive = mapRateLimits(walletSample({ BUNDLED_CREDITS: 25 }))
+  expect(positive.windows).toEqual([
+    { name: "Plan credits", balance: 25, unit: "credits" },
+  ])
+
+  const zero = mapRateLimits(walletSample({ BUNDLED_CREDITS: 0 }))
+  expect(zero.windows).toEqual([])
+
+  const missing = mapRateLimits(walletSample({}))
+  expect(missing.windows).toEqual([])
+})
+
+test("estimates cover the pro, plus and max tiers", () => {
+  const pro = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 0 }),
+    resolvePlan({ plan: "pro" }),
+  )
+  expect(pro.plan).toBe("Pro")
+  expect(pro.windows).toEqual([
+    {
+      name: "Plan credits (est.)",
+      amount: 1,
+      limit: 1,
+      unit: "credits",
+      display: "0 of 1 credits left",
+      aside: true,
+    },
+  ])
+
+  const plus = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 25 }),
+    resolvePlan({ plan: "plus" }),
+  )
+  expect(plus.plan).toBe("Plus")
+  expect(plus.windows).toEqual([
+    {
+      name: "Plan credits (est.)",
+      amount: 50,
+      limit: 75,
+      unit: "credits",
+      display: "25 of 75 credits left",
+      aside: true,
+    },
+  ])
+
+  const max = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 225 }),
+    resolvePlan({ plan: "max" }),
+  )
+  expect(max.plan).toBe("Max")
+  expect(max.windows).toEqual([
+    {
+      name: "Plan credits (est.)",
+      amount: 0,
+      limit: 225,
+      unit: "credits",
+      display: "225 of 225 credits left",
+      aside: true,
+    },
+  ])
+})
+
+test("plan names are matched case-insensitively with surrounding whitespace", () => {
+  const result = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 25 }),
+    resolvePlan({ plan: "  PlUs  " }),
+  )
+  expect(result.plan).toBe("Plus")
+  expect(result.windows[0]).toEqual({
+    name: "Plan credits (est.)",
+    amount: 50,
+    limit: 75,
+    unit: "credits",
+    display: "25 of 75 credits left",
+    aside: true,
+  })
+})
+
+test("estimated usage is rounded to two decimals", () => {
+  const result = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 25.006 }),
+    resolvePlan({ plan: "plus" }),
+  )
+  expect(result.windows).toEqual([
+    {
+      name: "Plan credits (est.)",
+      amount: 49.99,
+      limit: 75,
+      unit: "credits",
+      display: "25.006 of 75 credits left",
+      aside: true,
+    },
+  ])
+})
+
+test("a zero balance with a tier shows the full quota used", () => {
+  const result = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 0 }),
+    resolvePlan({ plan: "plus" }),
+  )
+  expect(result.windows).toEqual([
+    {
+      name: "Plan credits (est.)",
+      amount: 75,
+      limit: 75,
+      unit: "credits",
+      display: "0 of 75 credits left",
+      aside: true,
+    },
+  ])
+})
+
+test("a balance above the tier limit falls back to a wallet window", () => {
+  const result = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 100 }),
+    resolvePlan({ plan: "plus" }),
+  )
+  expect(result.plan).toBe("Plus")
+  expect(result.windows).toEqual([
+    { name: "Plan credits", balance: 100, unit: "credits" },
+  ])
+})
+
+test("missing bundled credits omit the plan window even with a tier", () => {
+  const result = mapRateLimits(
+    walletSample({ USD: 1 }),
+    resolvePlan({ plan: "plus" }),
+  )
+  expect(result.plan).toBe("Plus")
+  expect(result.windows).toEqual([
+    { name: "API balance", balance: 1, unit: "USD" },
+  ])
+})
+
+test("no options or a missing plan key do not add the hint window", () => {
+  for (const option of [resolvePlan(undefined), resolvePlan({})]) {
+    const result = mapRateLimits(makeSample(), option)
+    expect("plan" in result).toBe(false)
+    expect(
+      result.windows.some((window) => window.name === "plan option"),
+    ).toBe(false)
+  }
+})
+
+test("invalid plan options fall back to no tier and add the hint window", () => {
+  const options = [
+    resolvePlan({ plan: 42 }),
+    resolvePlan({ plan: "gold" }),
+    resolvePlan("plus"),
+  ]
+  for (const option of options) {
+    expect(option).toEqual({ invalid: true })
+    const result = mapRateLimits(makeSample(), option)
+    expect("plan" in result).toBe(false)
+    expect(result.windows).toContainEqual({
+      name: "plan option",
+      display: "not recognized; use pro, plus or max",
+    })
+    expect(result.windows).toContainEqual({
+      name: "Plan credits",
+      balance: 25,
+      unit: "credits",
+    })
+  }
 })
 
 test("HTTP 402 reports a balance or spending-cap failure without marking sign-in", async () => {

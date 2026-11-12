@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import plugin from "../index"
 import * as ns from "../index"
 import { _internal } from "../index"
 import { BASE } from "../src/venice"
+import fixture from "./fixtures/rate-limits.json"
 
 interface TestProviderEntry {
   name?: string
@@ -75,4 +76,33 @@ test("server returns config and auth hooks for venice", async () => {
   expect(hooks.auth.methods).toHaveLength(1)
   expect(hooks.auth.methods[0]?.type).toBe("api")
   expect(typeof hooks.config).toBe("function")
+})
+
+test("plugin options reach the usage hook through the entry", async () => {
+  const spy = spyOn(globalThis, "fetch").mockResolvedValue(Response.json(fixture))
+  try {
+    const hooks = await _internal.server(undefined, { plan: "plus" })
+    const report = await hooks.auth.usage(async () => ({
+      type: "api",
+      key: "wiring-key",
+    }))
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE}/api_keys/rate_limits`)
+    if ("error" in report) throw new Error(report.error)
+    expect(report.plan).toBe("Plus")
+    expect(report.windows).toContainEqual({
+      name: "Plan credits (est.)",
+      amount: 50,
+      limit: 75,
+      unit: "credits",
+      display: "25 of 75 credits left",
+      aside: true,
+    })
+
+    const bare = await _internal.server()
+    expect(typeof bare.auth.usage).toBe("function")
+  } finally {
+    spy.mockRestore()
+  }
 })
