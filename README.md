@@ -1,6 +1,6 @@
 # opencode-venice-auth
 
-Use your own [Venice.ai](https://venice.ai) API key to run Venice text models in OpenCode and magpie. The plugin talks to the OpenAI-compatible endpoint `https://api.venice.ai/api/v1`, fetches the model list live after sign-in, and adds key balances and rate-limit caps to `magpie quota`.
+Use your own [Venice.ai](https://venice.ai) API key to run Venice text models in OpenCode and magpie. The plugin talks to the OpenAI-compatible endpoint `https://api.venice.ai/api/v1`, fetches the model list live after sign-in, and adds key balances to `magpie quota`.
 
 Provider id: `venice`. Models are referenced as `venice/<model-id>`.
 
@@ -43,10 +43,9 @@ The plugin does not send `venice_parameters` in requests. Venice therefore appli
 `magpie quota`, and the Providers usage card, show what Venice reports for the key as windows ordered by Venice's charge priority:
 
 - `Daily DIEM`: the DIEM balance, shown only when it is greater than zero. It resets at the next daily epoch (`nextEpochBegins`, 00:00 UTC).
-- `Plan credits`: the bundled plan credits, shown as a wallet when no plan tier is configured. Without a tier, a zero balance is hidden.
-- `Plan credits (est.)`: with a plan tier configured, an estimate of the tier's usage. The display reads `25 of 75 credits left`; magpie derives the percentage. The window is marked as auxiliary (`aside: true`) and has no reset time because Venice does not expose one for the subscription.
+- `Plan credits`: the bundled plan credits, shown as a wallet when no plan tier is configured. The window appears whenever Venice reports the field, including zero; a negative value is displayed as zero.
+- `Plan credits (est.)`: with a plan tier configured, an estimate of the tier's usage. The display reads `25 of 75 credits left`; magpie derives the percentage. The window is marked as auxiliary (`aside: true`) and carries an estimated `resetsAt` (the first day of the next calendar month at 00:00 UTC) plus a 30-day `span`, so magpie can draw the remaining-quota curve, Pace and Runs out. Venice does not expose the subscription's real reset day to an inference key.
 - `API balance`: the prepaid USD balance, shown whenever Venice reports the field, including zero (a negative value is displayed as zero).
-- Rate-limit caps summarized per limit type as a range (for example `50-100 across 119 models`), with account-wide caps listed first. Only caps are shown: Venice does not report consumption, so the plugin does not invent a used amount. Per-model caps remain available from Venice at `GET /api_keys/rate_limits`.
 - `plan option`: added at the end only when the configured plan value is not recognized. It reads `not recognized; use pro, plus or max` and never echoes the bad value; the credits fall back to the untiered wallet window.
 
 An HTTP 402 from a usage request is displayed as the balance or spending-cap condition described in [Sign-in](#http-402-is-not-an-expired-sign-in).
@@ -75,9 +74,13 @@ magpie plugin options opencode-venice-auth off
 
 Use the name or spec the plugin was installed under; `opencode-venice-auth` is the package name. The credit limits are Pro 1, Plus 75 and Max 225 credits, matching Venice's current published values, where 1 credit = $1. These values can go out of date, in which case the estimate is still shown but its percentage is wrong.
 
-The estimate is best effort. Venice does not expose the subscription's total allowance or reset time to an inference key, so the limit comes from the table above, the window has no `resetsAt`, and the estimate carries the `(est.)` suffix and `aside: true`. The `aside` flag tells magpie this is auxiliary data rather than a timed metered quota, so it is not marked as a clock-based hold. The same flag also keeps the estimate out of magpie's balance reminders (quota and balance alerts). If the reported bundled balance is greater than the configured limit (a stale tier or a rollover), the plugin shows a plain `Plan credits` wallet instead of a percentage. A zero bundled balance with a tier configured shows the estimate at 100% used.
+The estimate is best effort. Venice does not expose the subscription's total allowance or real reset day to an inference key, so the limit comes from the table above and the reset is estimated as the first day of the next calendar month at 00:00 UTC with a 30-day `span`. The estimate carries the `(est.)` suffix and `aside: true`. The `aside` flag tells magpie this is auxiliary data rather than a timed metered quota, so it is not marked as a clock-based hold. The same flag also keeps the estimate out of magpie's balance reminders (quota and balance alerts). If the reported bundled balance is greater than the configured limit (a stale tier or a rollover), the plugin shows a plain `Plan credits` wallet instead of a percentage. A zero bundled balance with a tier configured shows the estimate at 100% used.
 
 Options are resolved once when the plugin loads, and magpie reloads the plugin when the options change. The plan badge can be stale on the host side: after clearing the option, the previous badge may remain until the account is logged out and back in. Signing in again alone does not clear it; run `magpie plugin logout venice` first, then sign in again.
+
+### Charts and history
+
+magpie does not backfill history: recording starts after the plugin is installed. The estimate chart shows Pace and Runs out only after at least three readings spanning at least one hour, and a readable line takes about a day of use. The `API balance` window has no balance-over-time chart: magpie draws that chart only for a top-level balance card without windows and does not support plugin wallet windows.
 
 ## Install
 
@@ -94,6 +97,29 @@ Without cloning, install straight from the repository: `magpie plugin add https:
 From npm, install the published package: `magpie plugin add opencode-venice-auth`.
 
 The package is also an OpenCode v1 plugin and can be used as an OpenCode plugin.
+
+## Multiple machines
+
+magpie's encrypted sync carries the plugin list, including each plugin's spec and its options, so the `plan` option follows the plugin to the other machine. A plugin installed from a local path (for example `magpie plugin add ./`) is not uploaded.
+
+The receiving machine installs each plugin from its spec verbatim. An npm spec needs access to the npm registry; a `github:` spec needs access to GitHub. When an install fails, magpie only writes a log line and the sync still counts as successful, so no error appears in the UI. Installing from npm is therefore the more reliable choice:
+
+```sh
+magpie plugin add npm:opencode-venice-auth
+```
+
+Plugin sign-ins, including the Venice API key, sync only when sign-ins are enabled. That is off by default. Turn it on with:
+
+```sh
+magpie github set sign-ins=yes
+```
+
+The sync passphrase must be the same on both machines; GitHub only ever receives the sealed file.
+
+If the plugin is missing or shows as not signed in on the receiving machine, check in this order:
+
+1. Run `magpie plugin list` on the receiving machine to see whether the plugin was installed at all.
+2. If it is installed but Providers shows it as not signed in, either sign-ins is not enabled or the passphrases differ.
 
 ## Development
 
