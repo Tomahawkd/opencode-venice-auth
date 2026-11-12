@@ -45,7 +45,7 @@ The plugin does not send `venice_parameters` in requests. Venice therefore appli
 - `Daily DIEM`: the DIEM balance, shown only when it is greater than zero. It resets at the next daily epoch (`nextEpochBegins`, 00:00 UTC).
 - `Plan credits`: the bundled plan credits, shown as a wallet when no plan tier is configured. The window appears whenever Venice reports the field, including zero; a negative value is displayed as zero.
 - `Plan credits (est.)`: with a plan tier configured, an estimate of the tier's usage. The display reads `25 of 75 credits left`; magpie derives the percentage. The window is marked as auxiliary (`aside: true`) and carries an estimated `resetsAt` (the first day of the next calendar month at 00:00 UTC) plus a 30-day `span`, so magpie can draw the remaining-quota curve, Pace and Runs out. Venice does not expose the subscription's real reset day to an inference key.
-- `API balance`: the prepaid USD balance, shown whenever Venice reports the field, including zero (a negative value is displayed as zero).
+- `API balance`: the prepaid USD balance, shown whenever Venice reports the field, including zero (a negative value is displayed as zero). The window is marked as auxiliary (`aside: true`), so magpie shows only the balance text: it draws no progress bar and records no point in the remaining-quota curve or history. An aside window also does not participate in magpie's balance-based routing between accounts of the same currency; a single Venice account is unaffected.
 - `plan option`: added at the end only when the configured plan value is not recognized. It reads `not recognized; use pro, plus or max` and never echoes the bad value; the credits fall back to the untiered wallet window.
 
 An HTTP 402 from a usage request is displayed as the balance or spending-cap condition described in [Sign-in](#http-402-is-not-an-expired-sign-in).
@@ -80,7 +80,7 @@ Options are resolved once when the plugin loads, and magpie reloads the plugin w
 
 ### Charts and history
 
-magpie does not backfill history: recording starts after the plugin is installed. The estimate chart shows Pace and Runs out only after at least three readings spanning at least one hour, and a readable line takes about a day of use. The `API balance` window has no balance-over-time chart: magpie draws that chart only for a top-level balance card without windows and does not support plugin wallet windows.
+magpie does not backfill history: recording starts after the plugin is installed. The estimate chart shows Pace and Runs out only after at least three readings spanning at least one hour, and a readable line takes about a day of use. The `API balance` window has no balance-over-time chart: magpie draws that chart only for a top-level balance card without windows and does not support plugin wallet windows. Its `aside` marker also keeps it out of the remaining-quota history and progress bars.
 
 ## Install
 

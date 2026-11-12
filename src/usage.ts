@@ -12,6 +12,7 @@ export interface WalletWindow {
   balance: number
   unit: "USD" | "DIEM" | "credits"
   resetsAt?: string
+  aside?: true
 }
 
 export interface EstimateWindow {
@@ -152,6 +153,7 @@ function walletWindows(
       name: "API balance",
       balance: usd < 0 ? 0 : usd,
       unit: "USD",
+      aside: true,
     })
   }
   return windows

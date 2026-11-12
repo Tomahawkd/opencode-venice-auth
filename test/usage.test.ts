@@ -65,7 +65,7 @@ const FIXTURE_REPORT: UsageSuccess = {
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
     { name: "Plan credits", balance: 25, unit: "credits" },
-    { name: "API balance", balance: 50.23, unit: "USD" },
+    { name: "API balance", balance: 50.23, unit: "USD", aside: true },
   ],
 }
 
@@ -107,7 +107,7 @@ test("a null key expiration leaves until absent", () => {
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
     { name: "Plan credits", balance: 25, unit: "credits" },
-    { name: "API balance", balance: 50.23, unit: "USD" },
+    { name: "API balance", balance: 50.23, unit: "USD", aside: true },
   ])
 })
 
@@ -133,7 +133,7 @@ test("windows follow the Venice charge order and carry currency-specific fields"
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
     { name: "Plan credits", balance: 25, unit: "credits" },
-    { name: "API balance", balance: 50.23, unit: "USD" },
+    { name: "API balance", balance: 50.23, unit: "USD", aside: true },
     {
       name: "plan option",
       display: "not recognized; use pro, plus or max",
@@ -174,7 +174,7 @@ test("rate limit entries do not produce any text windows", () => {
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
     { name: "Plan credits", balance: 25, unit: "credits" },
-    { name: "API balance", balance: 50.23, unit: "USD" },
+    { name: "API balance", balance: 50.23, unit: "USD", aside: true },
   ])
 })
 
@@ -184,12 +184,12 @@ test("zero and missing balances follow the per-currency visibility rules", () =>
   )
   expect(zeroes.windows).toEqual([
     { name: "Plan credits", balance: 0, unit: "credits" },
-    { name: "API balance", balance: 0, unit: "USD" },
+    { name: "API balance", balance: 0, unit: "USD", aside: true },
   ])
 
   const negativeUsd = mapRateLimits(walletSample({ USD: -3.5 }))
   expect(negativeUsd.windows).toEqual([
-    { name: "API balance", balance: 0, unit: "USD" },
+    { name: "API balance", balance: 0, unit: "USD", aside: true },
   ])
 
   const missingUsd = mapRateLimits(
@@ -210,7 +210,7 @@ test("Daily DIEM appears only above zero and resets at the next epoch", () => {
   })
 
   const zero = mapRateLimits(walletSample({ DIEM: 0, USD: 1 }))
-  expect(zero.windows).toEqual([{ name: "API balance", balance: 1, unit: "USD" }])
+  expect(zero.windows).toEqual([{ name: "API balance", balance: 1, unit: "USD", aside: true }])
 })
 
 test("plan credits without a tier show the wallet at zero and floor negative balances", () => {
@@ -396,7 +396,7 @@ test("missing bundled credits omit the plan window even with a tier", () => {
   )
   expect(result.plan).toBe("Plus")
   expect(result.windows).toEqual([
-    { name: "API balance", balance: 1, unit: "USD" },
+    { name: "API balance", balance: 1, unit: "USD", aside: true },
   ])
 })
 
