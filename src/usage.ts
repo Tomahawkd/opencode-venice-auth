@@ -137,92 +137,11 @@ function walletWindows(
   return windows
 }
 
-interface RateLimitSummary {
-  min: number
-  max: number
-  models: number
-}
-
-function formatSummary(summary: RateLimitSummary): string {
-  if (summary.min === summary.max) {
-    const noun = summary.models === 1 ? "model" : "models"
-    return `${summary.min} across ${summary.models} ${noun}`
-  }
-  return `${summary.min}-${summary.max} across ${summary.models} models`
-}
-
-function collectAccountWindows(
-  entries: RateLimitsResponse["data"]["rateLimits"],
-): TextWindow[] {
-  const windows: TextWindow[] = []
-  for (const entry of entries) {
-    if (entry.apiModelId !== undefined || entry.rateLimits.length === 0) continue
-    windows.push({
-      name: "all models",
-      display: entry.rateLimits
-        .map((limit) => `${limit.amount} ${limit.type}`)
-        .join(" / "),
-    })
-  }
-  return windows
-}
-
-function recordLimit(
-  summaries: Map<string, RateLimitSummary>,
-  order: string[],
-  type: string,
-  amount: number,
-): void {
-  const summary = summaries.get(type)
-  if (summary === undefined) {
-    summaries.set(type, { min: amount, max: amount, models: 0 })
-    order.push(type)
-    return
-  }
-  if (amount < summary.min) summary.min = amount
-  if (amount > summary.max) summary.max = amount
-}
-
-function collectModelWindows(
-  entries: RateLimitsResponse["data"]["rateLimits"],
-): TextWindow[] {
-  const summaries = new Map<string, RateLimitSummary>()
-  const order: string[] = []
-  for (const entry of entries) {
-    if (entry.apiModelId === undefined || entry.rateLimits.length === 0) continue
-    const seen = new Set<string>()
-    for (const limit of entry.rateLimits) {
-      recordLimit(summaries, order, limit.type, limit.amount)
-      seen.add(limit.type)
-    }
-    for (const type of seen) {
-      const summary = summaries.get(type)
-      if (summary !== undefined) summary.models += 1
-    }
-  }
-  const windows: TextWindow[] = []
-  for (const type of order) {
-    const summary = summaries.get(type)
-    if (summary !== undefined) {
-      windows.push({
-        name: `per-model ${type}`,
-        display: formatSummary(summary),
-      })
-    }
-  }
-  return windows
-}
-
 export function mapRateLimits(
   data: RateLimitsResponse,
   option: PlanOption = { invalid: false },
 ): UsageSuccess {
-  const entries = data.data.rateLimits
-  const windows: UsageWindow[] = [
-    ...walletWindows(data.data, option),
-    ...collectAccountWindows(entries),
-    ...collectModelWindows(entries),
-  ]
+  const windows: UsageWindow[] = [...walletWindows(data.data, option)]
   if (option.invalid) {
     windows.push({
       name: "plan option",

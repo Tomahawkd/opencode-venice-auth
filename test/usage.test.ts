@@ -66,7 +66,6 @@ const FIXTURE_REPORT: UsageSuccess = {
     },
     { name: "Plan credits", balance: 25, unit: "credits" },
     { name: "API balance", balance: 50.23, unit: "USD" },
-    { name: "per-model RPM", display: "100 across 1 model" },
   ],
 }
 
@@ -80,7 +79,7 @@ test("createAuth exposes a usage hook that runs through the injected fetch", asy
   expect(stub.calls).toHaveLength(1)
 })
 
-test("the fixture maps to balance, expiration and display-only windows", async () => {
+test("the fixture maps only to balance and expiration windows", async () => {
   const key = "fixture-key"
   const stub = makeStub({ ok: true, status: 200, json: async () => fixture })
   const usage = createUsage(stub.fetchImpl)
@@ -105,7 +104,6 @@ test("a null key expiration leaves until absent", () => {
     },
     { name: "Plan credits", balance: 25, unit: "credits" },
     { name: "API balance", balance: 50.23, unit: "USD" },
-    { name: "per-model RPM", display: "100 across 1 model" },
   ])
 })
 
@@ -132,8 +130,6 @@ test("windows follow the Venice charge order and carry currency-specific fields"
     },
     { name: "Plan credits", balance: 25, unit: "credits" },
     { name: "API balance", balance: 50.23, unit: "USD" },
-    { name: "all models", display: "50 RPM" },
-    { name: "per-model RPM", display: "100 across 1 model" },
     {
       name: "plan option",
       display: "not recognized; use pro, plus or max",
@@ -172,156 +168,6 @@ test("Daily DIEM appears only above zero and resets at the next epoch", () => {
 
   const zero = mapRateLimits(walletSample({ DIEM: 0, USD: 1 }))
   expect(zero.windows).toEqual([{ name: "API balance", balance: 1, unit: "USD" }])
-})
-
-test("rate limits become display-only windows and empty entries are skipped", () => {
-  const result = mapRateLimits(
-    makeSample({
-      balances: {},
-      rateLimits: [
-        {
-          apiModelId: "model-a",
-          rateLimits: [
-            { amount: 100, type: "RPM" },
-            { amount: 10000, type: "TPM" },
-          ],
-        },
-        { rateLimits: [{ amount: 50, type: "RPM" }] },
-        { apiModelId: "empty", rateLimits: [] },
-      ],
-    }),
-  )
-  expect(result.windows).toEqual([
-    { name: "all models", display: "50 RPM" },
-    { name: "per-model RPM", display: "100 across 1 model" },
-    { name: "per-model TPM", display: "10000 across 1 model" },
-  ])
-
-  const none = mapRateLimits(makeSample({ balances: {}, rateLimits: [] }))
-  expect(none.windows).toEqual([])
-})
-
-test("per-model windows fold multiple models into per-type min-max summaries", () => {
-  const result = mapRateLimits(
-    makeSample({
-      balances: {},
-      rateLimits: [
-        {
-          apiModelId: "model-a",
-          rateLimits: [
-            { amount: 50, type: "RPM" },
-            { amount: 10000, type: "TPM" },
-          ],
-        },
-        {
-          apiModelId: "model-b",
-          rateLimits: [
-            { amount: 75, type: "RPM" },
-            { amount: 20000, type: "TPM" },
-          ],
-        },
-        {
-          apiModelId: "model-c",
-          rateLimits: [{ amount: 100, type: "RPM" }],
-        },
-      ],
-    }),
-  )
-  expect(result.windows).toEqual([
-    { name: "per-model RPM", display: "50-100 across 3 models" },
-    { name: "per-model TPM", display: "10000-20000 across 2 models" },
-  ])
-})
-
-test("equal caps across multiple models use the plural summary", () => {
-  const result = mapRateLimits(
-    makeSample({
-      balances: {},
-      rateLimits: [
-        {
-          apiModelId: "model-a",
-          rateLimits: [{ amount: 100, type: "RPM" }],
-        },
-        {
-          apiModelId: "model-b",
-          rateLimits: [{ amount: 100, type: "RPM" }],
-        },
-      ],
-    }),
-  )
-  expect(result.windows).toEqual([
-    { name: "per-model RPM", display: "100 across 2 models" },
-  ])
-})
-
-test("account-level caps stay ahead of per-model summaries regardless of order", () => {
-  const result = mapRateLimits(
-    makeSample({
-      balances: {},
-      rateLimits: [
-        {
-          apiModelId: "model-a",
-          rateLimits: [{ amount: 100, type: "RPM" }],
-        },
-        {
-          rateLimits: [
-            { amount: 50, type: "RPM" },
-            { amount: 5000, type: "TPM" },
-          ],
-        },
-        {
-          apiModelId: "model-b",
-          rateLimits: [{ amount: 100, type: "RPM" }],
-        },
-      ],
-    }),
-  )
-  expect(result.windows).toEqual([
-    { name: "all models", display: "50 RPM / 5000 TPM" },
-    { name: "per-model RPM", display: "100 across 2 models" },
-  ])
-})
-
-test("empty entries do not count toward a type's model total", () => {
-  const result = mapRateLimits(
-    makeSample({
-      balances: {},
-      rateLimits: [
-        {
-          apiModelId: "model-a",
-          rateLimits: [{ amount: 100, type: "RPM" }],
-        },
-        { apiModelId: "empty-model", rateLimits: [] },
-        { rateLimits: [] },
-        {
-          apiModelId: "model-b",
-          rateLimits: [{ amount: 100, type: "RPM" }],
-        },
-      ],
-    }),
-  )
-  expect(result.windows).toEqual([
-    { name: "per-model RPM", display: "100 across 2 models" },
-  ])
-})
-
-test("hundreds of model entries collapse to one window per limit type", () => {
-  const rateLimits = Array.from({ length: 251 }, (_, index) => ({
-    apiModelId: `model-${index}`,
-    rateLimits:
-      index < 200
-        ? [
-            { amount: 100, type: "RPM" },
-            { amount: 10000, type: "TPM" },
-          ]
-        : [{ amount: 100, type: "RPM" }],
-  }))
-  const result = mapRateLimits(makeSample({ balances: {}, rateLimits }))
-  expect(result.windows).toHaveLength(2)
-  expect(result.windows).toEqual([
-    { name: "per-model RPM", display: "100 across 251 models" },
-    { name: "per-model TPM", display: "10000 across 200 models" },
-  ])
 })
 
 test("plan credits without a tier are a wallet window shown only above zero", () => {
