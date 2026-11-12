@@ -55,9 +55,9 @@ The old single balance line is gone. In `magpie quota --json`, the top-level `ba
 
 ### Billing order
 
-Venice charges each request in a fixed order: DIEM, then earned credits, then bundled plan credits, then USD. When one source runs out, the next one is used automatically. A request fails with HTTP 402 only when the combined available balance is insufficient. There is no plugin switch for this, because Venice fixes the order server-side.
+Venice charges each request in a fixed order: DIEM, then earned credits, then bundled plan credits, then USD. When one source runs out, the next one is used automatically. A request fails with HTTP 402 when the combined available balance is insufficient, or when a key-level spending cap is reached. There is no plugin switch for this, because Venice fixes the order server-side.
 
-The window order mirrors that priority: the first wallet window with a positive balance is the next currency Venice will charge. One exception is that earned credits sit between DIEM and plan credits and are not visible to the plugin, so a missing earned-credits window is normal; a missing window can also simply mean that currency's balance is zero. A Venice per-key consumption limit (for example a USD cap) is configured in the Venice web account, not by this plugin; it can turn an otherwise funded request into a 402.
+The window order itself expresses that priority: with a plan tier configured, the `Plan credits (est.)` window marks where bundled plan credits sit. To find the next currency Venice will charge, look for the first source with a remaining balance in window order, including the estimate window; scanning only wallet windows is not enough. One exception is that earned credits sit between DIEM and plan credits and are not visible to the plugin, so a missing earned-credits window is normal; a missing window can also simply mean that currency's balance is zero. A Venice per-key consumption limit (for example a USD cap) is configured in the Venice web account, not by this plugin; it can turn an otherwise funded request into a 402.
 
 ### Plan estimate (optional)
 
@@ -75,9 +75,9 @@ magpie plugin options opencode-venice-auth off
 
 Use the name or spec the plugin was installed under; `opencode-venice-auth` is the package name. The credit limits are Pro 1, Plus 75 and Max 225 credits, matching Venice's current published values, where 1 credit = $1. These values can go out of date, in which case the estimate is still shown but its percentage is wrong.
 
-The estimate is best effort. Venice does not expose the subscription's total allowance or reset time to an inference key, so the limit comes from the table above, the window has no `resetsAt`, and the estimate carries the `(est.)` suffix and `aside: true`. The `aside` flag tells magpie this is auxiliary data rather than a timed metered quota, so it is not marked as a clock-based hold. If the reported bundled balance is greater than the configured limit (a stale tier or a rollover), the plugin shows a plain `Plan credits` wallet instead of a percentage. A zero bundled balance with a tier configured shows the estimate at 100% used.
+The estimate is best effort. Venice does not expose the subscription's total allowance or reset time to an inference key, so the limit comes from the table above, the window has no `resetsAt`, and the estimate carries the `(est.)` suffix and `aside: true`. The `aside` flag tells magpie this is auxiliary data rather than a timed metered quota, so it is not marked as a clock-based hold. The same flag also keeps the estimate out of magpie's balance reminders (quota and balance alerts). If the reported bundled balance is greater than the configured limit (a stale tier or a rollover), the plugin shows a plain `Plan credits` wallet instead of a percentage. A zero bundled balance with a tier configured shows the estimate at 100% used.
 
-Options are resolved once when the plugin loads, and magpie reloads the plugin when the options change. The plan badge can be stale on the host side: after clearing the option, the previous badge may remain until the account is signed in again.
+Options are resolved once when the plugin loads, and magpie reloads the plugin when the options change. The plan badge can be stale on the host side: after clearing the option, the previous badge may remain until the account is logged out and back in. Signing in again alone does not clear it; run `magpie plugin logout venice` first, then sign in again.
 
 ## Install
 

@@ -437,6 +437,24 @@ test("a zero balance with a tier shows the full quota used", () => {
   ])
 })
 
+test("a negative bundled balance with a tier floors the estimate at zero", () => {
+  const result = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: -2 }),
+    resolvePlan({ plan: "plus" }),
+  )
+  expect(result.plan).toBe("Plus")
+  expect(result.windows).toEqual([
+    {
+      name: "Plan credits (est.)",
+      amount: 75,
+      limit: 75,
+      unit: "credits",
+      display: "0 of 75 credits left",
+      aside: true,
+    },
+  ])
+})
+
 test("a balance above the tier limit falls back to a wallet window", () => {
   const result = mapRateLimits(
     walletSample({ BUNDLED_CREDITS: 100 }),
@@ -460,7 +478,7 @@ test("missing bundled credits omit the plan window even with a tier", () => {
 })
 
 test("no options or a missing plan key do not add the hint window", () => {
-  for (const option of [resolvePlan(undefined), resolvePlan({})]) {
+  for (const option of [resolvePlan(undefined), resolvePlan(null), resolvePlan({})]) {
     const result = mapRateLimits(makeSample(), option)
     expect("plan" in result).toBe(false)
     expect(

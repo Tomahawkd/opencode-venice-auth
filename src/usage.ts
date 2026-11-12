@@ -98,13 +98,14 @@ function creditWindows(
     if (left <= 0) return []
     return [{ name: "Plan credits", balance: left, unit: "credits" }]
   }
+  const remaining = left < 0 ? 0 : left
   return [
     {
       name: "Plan credits (est.)",
-      amount: round2(plan.credits - left),
+      amount: round2(plan.credits - remaining),
       limit: plan.credits,
       unit: "credits",
-      display: `${left} of ${plan.credits} credits left`,
+      display: `${remaining} of ${plan.credits} credits left`,
       aside: true,
     },
   ]
