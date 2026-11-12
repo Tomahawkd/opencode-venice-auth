@@ -98,6 +98,7 @@ test("plugin options reach the usage hook through the entry", async () => {
       limit: 75,
       unit: "credits",
       display: "25 of 75 credits left",
+      used: 66.67,
       resetsAt: "2026-12-01T00:00:00.000Z",
       span: 2592000,
       aside: true,

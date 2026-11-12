@@ -64,7 +64,7 @@ const FIXTURE_REPORT: UsageSuccess = {
       unit: "DIEM",
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
-    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "Plan credits", balance: 25, unit: "credits", aside: true },
     { name: "API balance", balance: 50.23, unit: "USD", aside: true },
   ],
 }
@@ -106,7 +106,7 @@ test("a null key expiration leaves until absent", () => {
       unit: "DIEM",
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
-    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "Plan credits", balance: 25, unit: "credits", aside: true },
     { name: "API balance", balance: 50.23, unit: "USD", aside: true },
   ])
 })
@@ -132,7 +132,7 @@ test("windows follow the Venice charge order and carry currency-specific fields"
       unit: "DIEM",
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
-    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "Plan credits", balance: 25, unit: "credits", aside: true },
     { name: "API balance", balance: 50.23, unit: "USD", aside: true },
     {
       name: "plan option",
@@ -173,7 +173,7 @@ test("rate limit entries do not produce any text windows", () => {
       unit: "DIEM",
       resetsAt: "2025-05-07T00:00:00.000Z",
     },
-    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "Plan credits", balance: 25, unit: "credits", aside: true },
     { name: "API balance", balance: 50.23, unit: "USD", aside: true },
   ])
 })
@@ -183,7 +183,7 @@ test("zero and missing balances follow the per-currency visibility rules", () =>
     walletSample({ USD: 0, DIEM: 0, BUNDLED_CREDITS: 0 }),
   )
   expect(zeroes.windows).toEqual([
-    { name: "Plan credits", balance: 0, unit: "credits" },
+    { name: "Plan credits", balance: 0, unit: "credits", aside: true },
     { name: "API balance", balance: 0, unit: "USD", aside: true },
   ])
 
@@ -196,7 +196,7 @@ test("zero and missing balances follow the per-currency visibility rules", () =>
     walletSample({ DIEM: 0, BUNDLED_CREDITS: 25 }),
   )
   expect(missingUsd.windows).toEqual([
-    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "Plan credits", balance: 25, unit: "credits", aside: true },
   ])
 })
 
@@ -216,17 +216,17 @@ test("Daily DIEM appears only above zero and resets at the next epoch", () => {
 test("plan credits without a tier show the wallet at zero and floor negative balances", () => {
   const positive = mapRateLimits(walletSample({ BUNDLED_CREDITS: 25 }))
   expect(positive.windows).toEqual([
-    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "Plan credits", balance: 25, unit: "credits", aside: true },
   ])
 
   const zero = mapRateLimits(walletSample({ BUNDLED_CREDITS: 0 }))
   expect(zero.windows).toEqual([
-    { name: "Plan credits", balance: 0, unit: "credits" },
+    { name: "Plan credits", balance: 0, unit: "credits", aside: true },
   ])
 
   const negative = mapRateLimits(walletSample({ BUNDLED_CREDITS: -4.5 }))
   expect(negative.windows).toEqual([
-    { name: "Plan credits", balance: 0, unit: "credits" },
+    { name: "Plan credits", balance: 0, unit: "credits", aside: true },
   ])
 
   const missing = mapRateLimits(walletSample({}))
@@ -241,11 +241,12 @@ test("estimates cover the pro, plus and max tiers", () => {
     amount: number
     limit: number
     display: string
+    used: number
   }
   const cases: EstimateCase[] = [
-    { plan: "pro", balance: 0, label: "Pro", amount: 1, limit: 1, display: "0 of 1 credits left" },
-    { plan: "plus", balance: 25, label: "Plus", amount: 50, limit: 75, display: "25 of 75 credits left" },
-    { plan: "max", balance: 225, label: "Max", amount: 0, limit: 225, display: "225 of 225 credits left" },
+    { plan: "pro", balance: 0, label: "Pro", amount: 1, limit: 1, display: "0 of 1 credits left", used: 100 },
+    { plan: "plus", balance: 25, label: "Plus", amount: 50, limit: 75, display: "25 of 75 credits left", used: 66.67 },
+    { plan: "max", balance: 225, label: "Max", amount: 0, limit: 225, display: "225 of 225 credits left", used: 0 },
   ]
   for (const item of cases) {
     const result = mapRateLimits(
@@ -261,12 +262,32 @@ test("estimates cover the pro, plus and max tiers", () => {
         limit: item.limit,
         unit: "credits",
         display: item.display,
+        used: item.used,
         resetsAt: FIXED_RESETS_AT,
         span: ESTIMATE_SPAN_SECONDS,
         aside: true,
       },
     ])
   }
+})
+
+test("a full plan balance keeps a zero-used estimate point with reset metadata", () => {
+  const result = mapRateLimits(
+    walletSample({ BUNDLED_CREDITS: 225 }),
+    resolvePlan({ plan: "max" }),
+    FIXED_NOW,
+  )
+  expect(result.windows).toContainEqual({
+    name: "Plan credits (est.)",
+    amount: 0,
+    limit: 225,
+    unit: "credits",
+    display: "225 of 225 credits left",
+    used: 0,
+    resetsAt: FIXED_RESETS_AT,
+    span: ESTIMATE_SPAN_SECONDS,
+    aside: true,
+  })
 })
 
 test("estimate windows reset at the next month start and span 30 days", () => {
@@ -290,6 +311,7 @@ test("estimate windows reset at the next month start and span 30 days", () => {
         limit: 75,
         unit: "credits",
         display: "25 of 75 credits left",
+        used: 66.67,
         resetsAt,
         span: 2592000,
         aside: true,
@@ -311,6 +333,7 @@ test("plan names are matched case-insensitively with surrounding whitespace", ()
     limit: 75,
     unit: "credits",
     display: "25 of 75 credits left",
+    used: 66.67,
     resetsAt: FIXED_RESETS_AT,
     span: ESTIMATE_SPAN_SECONDS,
     aside: true,
@@ -330,6 +353,7 @@ test("estimated usage is rounded to two decimals", () => {
       limit: 75,
       unit: "credits",
       display: "25.006 of 75 credits left",
+      used: 66.66,
       resetsAt: FIXED_RESETS_AT,
       span: ESTIMATE_SPAN_SECONDS,
       aside: true,
@@ -350,6 +374,7 @@ test("a zero balance with a tier shows the full quota used", () => {
       limit: 75,
       unit: "credits",
       display: "0 of 75 credits left",
+      used: 100,
       resetsAt: FIXED_RESETS_AT,
       span: ESTIMATE_SPAN_SECONDS,
       aside: true,
@@ -371,6 +396,7 @@ test("a negative bundled balance with a tier floors the estimate at zero", () =>
       limit: 75,
       unit: "credits",
       display: "0 of 75 credits left",
+      used: 100,
       resetsAt: FIXED_RESETS_AT,
       span: ESTIMATE_SPAN_SECONDS,
       aside: true,
@@ -385,7 +411,7 @@ test("a balance above the tier limit falls back to a wallet window", () => {
   )
   expect(result.plan).toBe("Plus")
   expect(result.windows).toEqual([
-    { name: "Plan credits", balance: 100, unit: "credits" },
+    { name: "Plan credits", balance: 100, unit: "credits", aside: true },
   ])
 })
 
@@ -428,6 +454,7 @@ test("invalid plan options fall back to no tier and add the hint window", () => 
       name: "Plan credits",
       balance: 25,
       unit: "credits",
+      aside: true,
     })
   }
 })

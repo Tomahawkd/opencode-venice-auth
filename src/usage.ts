@@ -21,6 +21,7 @@ export interface EstimateWindow {
   limit: number
   unit: "credits"
   display: string
+  used: number
   resetsAt: string
   span: number
   aside: true
@@ -113,6 +114,7 @@ function creditWindows(
         name: "Plan credits",
         balance: left < 0 ? 0 : left,
         unit: "credits",
+        aside: true,
       },
     ]
   }
@@ -124,6 +126,7 @@ function creditWindows(
       limit: plan.credits,
       unit: "credits",
       display: `${remaining} of ${plan.credits} credits left`,
+      used: round2(((plan.credits - remaining) / plan.credits) * 100),
       resetsAt: nextMonthStartUtc(now).toISOString(),
       span: ESTIMATE_SPAN_SECONDS,
       aside: true,
