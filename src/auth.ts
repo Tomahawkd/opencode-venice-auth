@@ -1,5 +1,5 @@
 import { BASE, UNEXPECTED_RESPONSE_SHAPE, fetchRateLimits } from "./venice"
-import type { FetchLike, RateLimitsResult } from "./venice"
+import type { FetchLike, JsonValue, RateLimitsResult } from "./venice"
 import { createUsage } from "./usage"
 import type { UsageReport } from "./usage"
 
@@ -64,6 +64,7 @@ interface AuthHooks {
 
 interface CreateAuthOptions {
   fetchImpl?: FetchLike
+  options?: JsonValue
 }
 
 type RateLimitsFailure = Extract<RateLimitsResult, { ok: false }>
@@ -85,9 +86,12 @@ function signInFailureMessage(failure: RateLimitsFailure): string {
   return `Venice could not verify this API key (HTTP ${failure.status})`
 }
 
-export function createAuth({ fetchImpl = fetch }: CreateAuthOptions = {}): AuthHooks {
+export function createAuth({
+  fetchImpl = fetch,
+  options,
+}: CreateAuthOptions = {}): AuthHooks {
   return {
-    provider: "venice", usage: createUsage(fetchImpl),
+    provider: "venice", usage: createUsage(fetchImpl, options),
     methods: [
       {
         type: "api",

@@ -1,13 +1,32 @@
+import { z } from "zod"
 import { UNEXPECTED_RESPONSE_SHAPE, fetchRateLimits } from "./venice"
-import type { FetchLike, RateLimitsResponse } from "./venice"
+import type { FetchLike, JsonValue, RateLimitsResponse } from "./venice"
 
-export interface UsageWindow {
+export interface TextWindow {
   name: string
   display: string
 }
 
+export interface WalletWindow {
+  name: string
+  balance: number
+  unit: "USD" | "DIEM" | "credits"
+  resetsAt?: string
+}
+
+export interface EstimateWindow {
+  name: string
+  amount: number
+  limit: number
+  unit: "credits"
+  display: string
+  aside: true
+}
+
+export type UsageWindow = TextWindow | WalletWindow | EstimateWindow
+
 export interface UsageSuccess {
-  balance?: string
+  plan?: string
   until?: string
   windows: UsageWindow[]
 }
@@ -31,16 +50,90 @@ export interface UsageOauthAuth {
 
 export type UsageAuth = UsageApiKeyAuth | UsageOauthAuth
 
-function formatBalance(
+export interface VenicePlan {
+  label: string
+  credits: number
+}
+
+const PLANS = new Map<string, VenicePlan>([
+  ["pro", { label: "Pro", credits: 1 }],
+  ["plus", { label: "Plus", credits: 75 }],
+  ["max", { label: "Max", credits: 225 }],
+])
+
+const pluginOptionsSchema = z.object({ plan: z.string().optional() })
+
+export interface PlanOption {
+  plan?: VenicePlan
+  invalid: boolean
+}
+
+// Options arrive as free-form JSON from the host. Only an object with a
+// recognized plan name selects a tier; everything else is treated as "no
+// tier configured" and, when it looked like a plan attempt, flagged for a
+// trailing hint window.
+export function resolvePlan(options: JsonValue | undefined): PlanOption {
+  if (options === undefined || options === null) return { invalid: false }
+  const parsed = pluginOptionsSchema.safeParse(options)
+  if (!parsed.success) return { invalid: true }
+  const raw = parsed.data.plan
+  if (raw === undefined) return { invalid: false }
+  const plan = PLANS.get(raw.trim().toLowerCase())
+  if (plan === undefined) return { invalid: true }
+  return { plan, invalid: false }
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function creditWindows(
   balances: RateLimitsResponse["data"]["balances"],
-): string | undefined {
-  const parts: string[] = []
-  if (balances.USD !== undefined) parts.push(`$${balances.USD}`)
-  if (balances.DIEM !== undefined) parts.push(`${balances.DIEM} DIEM`)
-  if (balances.BUNDLED_CREDITS !== undefined) {
-    parts.push(`${balances.BUNDLED_CREDITS} BUNDLED_CREDITS`)
+  option: PlanOption,
+): UsageWindow[] {
+  const left = balances.BUNDLED_CREDITS
+  if (left === undefined) return []
+  const plan = option.plan
+  if (plan === undefined || left > plan.credits) {
+    if (left <= 0) return []
+    return [{ name: "Plan credits", balance: left, unit: "credits" }]
   }
-  return parts.length > 0 ? parts.join(" · ") : undefined
+  return [
+    {
+      name: "Plan credits (est.)",
+      amount: round2(plan.credits - left),
+      limit: plan.credits,
+      unit: "credits",
+      display: `${left} of ${plan.credits} credits left`,
+      aside: true,
+    },
+  ]
+}
+
+function walletWindows(
+  data: RateLimitsResponse["data"],
+  option: PlanOption,
+): UsageWindow[] {
+  const windows: UsageWindow[] = []
+  const diem = data.balances.DIEM
+  if (diem !== undefined && diem > 0) {
+    windows.push({
+      name: "Daily DIEM",
+      balance: diem,
+      unit: "DIEM",
+      resetsAt: data.nextEpochBegins,
+    })
+  }
+  windows.push(...creditWindows(data.balances, option))
+  const usd = data.balances.USD
+  if (usd !== undefined) {
+    windows.push({
+      name: "API balance",
+      balance: usd < 0 ? 0 : usd,
+      unit: "USD",
+    })
+  }
+  return windows
 }
 
 interface RateLimitSummary {
@@ -59,8 +152,8 @@ function formatSummary(summary: RateLimitSummary): string {
 
 function collectAccountWindows(
   entries: RateLimitsResponse["data"]["rateLimits"],
-): UsageWindow[] {
-  const windows: UsageWindow[] = []
+): TextWindow[] {
+  const windows: TextWindow[] = []
   for (const entry of entries) {
     if (entry.apiModelId !== undefined || entry.rateLimits.length === 0) continue
     windows.push({
@@ -91,7 +184,7 @@ function recordLimit(
 
 function collectModelWindows(
   entries: RateLimitsResponse["data"]["rateLimits"],
-): UsageWindow[] {
+): TextWindow[] {
   const summaries = new Map<string, RateLimitSummary>()
   const order: string[] = []
   for (const entry of entries) {
@@ -106,7 +199,7 @@ function collectModelWindows(
       if (summary !== undefined) summary.models += 1
     }
   }
-  const windows: UsageWindow[] = []
+  const windows: TextWindow[] = []
   for (const type of order) {
     const summary = summaries.get(type)
     if (summary !== undefined) {
@@ -119,16 +212,25 @@ function collectModelWindows(
   return windows
 }
 
-export function mapRateLimits(data: RateLimitsResponse): UsageSuccess {
+export function mapRateLimits(
+  data: RateLimitsResponse,
+  option: PlanOption = { invalid: false },
+): UsageSuccess {
   const entries = data.data.rateLimits
-  const windows = [
+  const windows: UsageWindow[] = [
+    ...walletWindows(data.data, option),
     ...collectAccountWindows(entries),
     ...collectModelWindows(entries),
   ]
+  if (option.invalid) {
+    windows.push({
+      name: "plan option",
+      display: "not recognized; use pro, plus or max",
+    })
+  }
 
   const result: UsageSuccess = { windows }
-  const balance = formatBalance(data.data.balances)
-  if (balance !== undefined) result.balance = balance
+  if (option.plan !== undefined) result.plan = option.plan.label
   const expiration = data.data.keyExpiration
   if (expiration !== null) result.until = expiration
   return result
@@ -166,12 +268,14 @@ export function mapUsageFailure(failure: {
 
 export function createUsage(
   fetchImpl: FetchLike = fetch,
+  options?: JsonValue,
 ): (getAuth: () => Promise<UsageAuth | undefined>) => Promise<UsageReport> {
+  const option = resolvePlan(options)
   return async (getAuth) => {
     const auth = await getAuth()
     if (auth?.type !== "api" || !auth.key) return { windows: [] }
     const result = await fetchRateLimits(auth.key, fetchImpl)
-    if (result.ok) return mapRateLimits(result.data)
+    if (result.ok) return mapRateLimits(result.data, option)
     return mapUsageFailure(result)
   }
 }

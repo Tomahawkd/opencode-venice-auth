@@ -1,6 +1,13 @@
 import { BASE } from "./src/venice"
+import type { JsonValue } from "./src/venice"
 import { createAuth } from "./src/auth"
 import { createProviderModels } from "./src/models"
+
+interface PluginInput {
+  directory?: string
+}
+
+type ServerArgs = [input?: PluginInput, options?: JsonValue]
 
 interface ProviderEntry {
   name?: string
@@ -27,9 +34,9 @@ async function applyConfig(cfg: Config): Promise<void> {
   }
 }
 
-const server = async () => ({
+const server = async (...args: ServerArgs) => ({
   config: applyConfig,
-  auth: createAuth(),
+  auth: createAuth({ options: args[1] }),
   provider: { id: "venice", models: createProviderModels() },
 })
 
