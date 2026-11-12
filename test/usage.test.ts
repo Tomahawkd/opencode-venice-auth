@@ -69,6 +69,10 @@ const FIXTURE_REPORT: UsageSuccess = {
   ],
 }
 
+const FIXED_NOW = new Date("2026-11-12T08:00:00.000Z")
+const FIXED_RESETS_AT = "2026-12-01T00:00:00.000Z"
+const ESTIMATE_SPAN_SECONDS = 2592000
+
 test("createAuth exposes a usage hook that runs through the injected fetch", async () => {
   expect(typeof createAuth().usage).toBe("function")
 
@@ -138,11 +142,50 @@ test("windows follow the Venice charge order and carry currency-specific fields"
   expect("plan" in result).toBe(false)
 })
 
+test("rate limit entries do not produce any text windows", () => {
+  const result = mapRateLimits(
+    makeSample({
+      rateLimits: [
+        {
+          rateLimits: [
+            { amount: 50, type: "RPM" },
+            { amount: 5000, type: "TPM" },
+          ],
+        },
+        {
+          apiModelId: "model-a",
+          rateLimits: [
+            { amount: 100, type: "RPM" },
+            { amount: 10000, type: "TPM" },
+          ],
+        },
+        {
+          apiModelId: "model-b",
+          rateLimits: [{ amount: 75, type: "RPM" }],
+        },
+      ],
+    }),
+  )
+  expect(result.windows).toEqual([
+    {
+      name: "Daily DIEM",
+      balance: 100.023,
+      unit: "DIEM",
+      resetsAt: "2025-05-07T00:00:00.000Z",
+    },
+    { name: "Plan credits", balance: 25, unit: "credits" },
+    { name: "API balance", balance: 50.23, unit: "USD" },
+  ])
+})
+
 test("zero and missing balances follow the per-currency visibility rules", () => {
   const zeroes = mapRateLimits(
     walletSample({ USD: 0, DIEM: 0, BUNDLED_CREDITS: 0 }),
   )
-  expect(zeroes.windows).toEqual([{ name: "API balance", balance: 0, unit: "USD" }])
+  expect(zeroes.windows).toEqual([
+    { name: "Plan credits", balance: 0, unit: "credits" },
+    { name: "API balance", balance: 0, unit: "USD" },
+  ])
 
   const negativeUsd = mapRateLimits(walletSample({ USD: -3.5 }))
   expect(negativeUsd.windows).toEqual([
@@ -170,73 +213,96 @@ test("Daily DIEM appears only above zero and resets at the next epoch", () => {
   expect(zero.windows).toEqual([{ name: "API balance", balance: 1, unit: "USD" }])
 })
 
-test("plan credits without a tier are a wallet window shown only above zero", () => {
+test("plan credits without a tier show the wallet at zero and floor negative balances", () => {
   const positive = mapRateLimits(walletSample({ BUNDLED_CREDITS: 25 }))
   expect(positive.windows).toEqual([
     { name: "Plan credits", balance: 25, unit: "credits" },
   ])
 
   const zero = mapRateLimits(walletSample({ BUNDLED_CREDITS: 0 }))
-  expect(zero.windows).toEqual([])
+  expect(zero.windows).toEqual([
+    { name: "Plan credits", balance: 0, unit: "credits" },
+  ])
+
+  const negative = mapRateLimits(walletSample({ BUNDLED_CREDITS: -4.5 }))
+  expect(negative.windows).toEqual([
+    { name: "Plan credits", balance: 0, unit: "credits" },
+  ])
 
   const missing = mapRateLimits(walletSample({}))
   expect(missing.windows).toEqual([])
 })
 
 test("estimates cover the pro, plus and max tiers", () => {
-  const pro = mapRateLimits(
-    walletSample({ BUNDLED_CREDITS: 0 }),
-    resolvePlan({ plan: "pro" }),
-  )
-  expect(pro.plan).toBe("Pro")
-  expect(pro.windows).toEqual([
-    {
-      name: "Plan credits (est.)",
-      amount: 1,
-      limit: 1,
-      unit: "credits",
-      display: "0 of 1 credits left",
-      aside: true,
-    },
-  ])
+  interface EstimateCase {
+    plan: string
+    balance: number
+    label: string
+    amount: number
+    limit: number
+    display: string
+  }
+  const cases: EstimateCase[] = [
+    { plan: "pro", balance: 0, label: "Pro", amount: 1, limit: 1, display: "0 of 1 credits left" },
+    { plan: "plus", balance: 25, label: "Plus", amount: 50, limit: 75, display: "25 of 75 credits left" },
+    { plan: "max", balance: 225, label: "Max", amount: 0, limit: 225, display: "225 of 225 credits left" },
+  ]
+  for (const item of cases) {
+    const result = mapRateLimits(
+      walletSample({ BUNDLED_CREDITS: item.balance }),
+      resolvePlan({ plan: item.plan }),
+      FIXED_NOW,
+    )
+    expect(result.plan).toBe(item.label)
+    expect(result.windows).toEqual([
+      {
+        name: "Plan credits (est.)",
+        amount: item.amount,
+        limit: item.limit,
+        unit: "credits",
+        display: item.display,
+        resetsAt: FIXED_RESETS_AT,
+        span: ESTIMATE_SPAN_SECONDS,
+        aside: true,
+      },
+    ])
+  }
+})
 
-  const plus = mapRateLimits(
-    walletSample({ BUNDLED_CREDITS: 25 }),
-    resolvePlan({ plan: "plus" }),
-  )
-  expect(plus.plan).toBe("Plus")
-  expect(plus.windows).toEqual([
-    {
-      name: "Plan credits (est.)",
-      amount: 50,
-      limit: 75,
-      unit: "credits",
-      display: "25 of 75 credits left",
-      aside: true,
-    },
-  ])
-
-  const max = mapRateLimits(
-    walletSample({ BUNDLED_CREDITS: 225 }),
-    resolvePlan({ plan: "max" }),
-  )
-  expect(max.plan).toBe("Max")
-  expect(max.windows).toEqual([
-    {
-      name: "Plan credits (est.)",
-      amount: 0,
-      limit: 225,
-      unit: "credits",
-      display: "225 of 225 credits left",
-      aside: true,
-    },
-  ])
+test("estimate windows reset at the next month start and span 30 days", () => {
+  const cases: Array<{ now: string; resetsAt: string }> = [
+    { now: "2026-11-12T08:00:00.000Z", resetsAt: "2026-12-01T00:00:00.000Z" },
+    { now: "2026-11-30T23:59:59.999Z", resetsAt: "2026-12-01T00:00:00.000Z" },
+    { now: "2026-11-01T00:00:00.000Z", resetsAt: "2026-12-01T00:00:00.000Z" },
+    { now: "2026-12-15T12:00:00.000Z", resetsAt: "2027-01-01T00:00:00.000Z" },
+    { now: "2028-02-29T12:00:00.000Z", resetsAt: "2028-03-01T00:00:00.000Z" },
+  ]
+  for (const { now, resetsAt } of cases) {
+    const result = mapRateLimits(
+      walletSample({ BUNDLED_CREDITS: 25 }),
+      resolvePlan({ plan: "plus" }),
+      new Date(now),
+    )
+    expect(result.windows).toEqual([
+      {
+        name: "Plan credits (est.)",
+        amount: 50,
+        limit: 75,
+        unit: "credits",
+        display: "25 of 75 credits left",
+        resetsAt,
+        span: 2592000,
+        aside: true,
+      },
+    ])
+  }
 })
 
 test("plan names are matched case-insensitively with surrounding whitespace", () => {
   const result = mapRateLimits(
     walletSample({ BUNDLED_CREDITS: 25 }),
     resolvePlan({ plan: "  PlUs  " }),
+    FIXED_NOW,
   )
   expect(result.plan).toBe("Plus")
   expect(result.windows[0]).toEqual({
@@ -245,6 +311,8 @@ test("plan names are matched case-insensitively with surrounding whitespace", ()
     limit: 75,
     unit: "credits",
     display: "25 of 75 credits left",
+    resetsAt: FIXED_RESETS_AT,
+    span: ESTIMATE_SPAN_SECONDS,
     aside: true,
   })
 })
@@ -253,6 +321,7 @@ test("estimated usage is rounded to two decimals", () => {
   const result = mapRateLimits(
     walletSample({ BUNDLED_CREDITS: 25.006 }),
     resolvePlan({ plan: "plus" }),
+    FIXED_NOW,
   )
   expect(result.windows).toEqual([
     {
@@ -261,6 +330,8 @@ test("estimated usage is rounded to two decimals", () => {
       limit: 75,
       unit: "credits",
       display: "25.006 of 75 credits left",
+      resetsAt: FIXED_RESETS_AT,
+      span: ESTIMATE_SPAN_SECONDS,
       aside: true,
     },
   ])
@@ -270,6 +341,7 @@ test("a zero balance with a tier shows the full quota used", () => {
   const result = mapRateLimits(
     walletSample({ BUNDLED_CREDITS: 0 }),
     resolvePlan({ plan: "plus" }),
+    FIXED_NOW,
   )
   expect(result.windows).toEqual([
     {
@@ -278,6 +350,8 @@ test("a zero balance with a tier shows the full quota used", () => {
       limit: 75,
       unit: "credits",
       display: "0 of 75 credits left",
+      resetsAt: FIXED_RESETS_AT,
+      span: ESTIMATE_SPAN_SECONDS,
       aside: true,
     },
   ])
@@ -287,6 +361,7 @@ test("a negative bundled balance with a tier floors the estimate at zero", () =>
   const result = mapRateLimits(
     walletSample({ BUNDLED_CREDITS: -2 }),
     resolvePlan({ plan: "plus" }),
+    FIXED_NOW,
   )
   expect(result.plan).toBe("Plus")
   expect(result.windows).toEqual([
@@ -296,6 +371,8 @@ test("a negative bundled balance with a tier floors the estimate at zero", () =>
       limit: 75,
       unit: "credits",
       display: "0 of 75 credits left",
+      resetsAt: FIXED_RESETS_AT,
+      span: ESTIMATE_SPAN_SECONDS,
       aside: true,
     },
   ])

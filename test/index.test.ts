@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test"
+import { expect, setSystemTime, spyOn, test } from "bun:test"
 import plugin from "../index"
 import * as ns from "../index"
 import { _internal } from "../index"
@@ -80,6 +80,7 @@ test("server returns config and auth hooks for venice", async () => {
 
 test("plugin options reach the usage hook through the entry", async () => {
   const spy = spyOn(globalThis, "fetch").mockResolvedValue(Response.json(fixture))
+  setSystemTime(new Date("2026-11-12T08:00:00.000Z"))
   try {
     const hooks = await _internal.server(undefined, { plan: "plus" })
     const report = await hooks.auth.usage(async () => ({
@@ -97,6 +98,8 @@ test("plugin options reach the usage hook through the entry", async () => {
       limit: 75,
       unit: "credits",
       display: "25 of 75 credits left",
+      resetsAt: "2026-12-01T00:00:00.000Z",
+      span: 2592000,
       aside: true,
     })
 
@@ -104,5 +107,6 @@ test("plugin options reach the usage hook through the entry", async () => {
     expect(typeof bare.auth.usage).toBe("function")
   } finally {
     spy.mockRestore()
+    setSystemTime()
   }
 })
