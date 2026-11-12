@@ -4,7 +4,7 @@
 
 ## 1. 发布前检查表
 
-- [ ] 四门禁全绿：`bun test`、`bun run typecheck`、`uvx pluvy --all`、`uvx pluvy --base 8d338e9`。两处 pluvy 都必须 exit 0 且报告文件数大于 0。
+- [ ] 四门禁全绿：`bun test`、`bun run typecheck`、`uvx pluvy --all`、`uvx pluvy --base 8d338e9`。`--all` 必须 exit 0 且报告文件数大于 0；`--base` 必须 exit 0 且无 findings——窗口内没有 `index.ts`/`src/*`/`test/*` 改动时报告文件数为 0 属正常，以 `git diff --name-only <基线>..HEAD` 的改动范围证明。
 - [ ] README 中每条命令在干净沙箱重新核对：`git clone`/`cd`、`magpie plugin add ./`、`magpie plugin add https://github.com/Tomahawkd/opencode-venice-auth`、`magpie plugin login venice`、`magpie quota`，以及 Development 段的 `bun install`、`bun test`、`bun run typecheck`、`uvx pluvy --all`。
 - [ ] 真实 key 登录后补测 `magpie provider test venice`，可用则补回 README Install 段。
 - [ ] GitHub Actions 在待发布的 HEAD 上为绿。
