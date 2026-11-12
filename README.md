@@ -80,7 +80,7 @@ Options are resolved once when the plugin loads, and magpie reloads the plugin w
 
 ### Charts and history
 
-magpie does not backfill history: recording starts after the plugin is installed. Only a `Plan credits (est.)` window with a configured plan tier draws the remaining-quota curve; wallet windows do not. Pace needs only the estimate's `resetsAt` and `span`, so it can be shown as soon as there is a reading. Runs out needs at least three readings within the current period spanning at least one hour, and a readable line takes about a day of use.
+magpie does not backfill history: recording starts after the plugin is installed. Only a `Plan credits (est.)` window with a configured plan tier draws the remaining-quota curve; wallet windows do not. The `API balance` window has no balance-over-time chart: magpie draws that chart only for a top-level balance card without windows and does not support plugin wallet windows. Pace needs only the estimate's `resetsAt` and `span`, so it can be shown as soon as there is a reading. Runs out needs at least three readings within the current period spanning at least one hour, and a readable line takes about a day of use.
 
 ## Install
 
