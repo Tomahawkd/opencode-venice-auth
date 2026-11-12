@@ -43,9 +43,9 @@ The plugin does not send `venice_parameters` in requests. Venice therefore appli
 `magpie quota`, and the Providers usage card, show what Venice reports for the key as windows ordered by Venice's charge priority:
 
 - `Daily DIEM`: the DIEM balance, shown only when it is greater than zero. It resets at the next daily epoch (`nextEpochBegins`, 00:00 UTC).
-- `Plan credits`: the bundled plan credits, shown as a wallet when no plan tier is configured. The window appears whenever Venice reports the field, including zero; a negative value is displayed as zero.
+- `Plan credits`: the bundled plan credits, shown as a wallet when no plan tier is configured. The window appears whenever Venice reports the field, including zero; a negative value is displayed as zero. Like `API balance`, the window is marked as auxiliary (`aside: true`): magpie shows only the balance text, draws no progress bar and records no point in the remaining-quota curve or history, so zero credits do not make magpie treat the account as used up.
 - `Plan credits (est.)`: with a plan tier configured, an estimate of the tier's usage. The display reads `25 of 75 credits left`; magpie derives the percentage. The window is marked as auxiliary (`aside: true`) and carries an estimated `resetsAt` (the first day of the next calendar month at 00:00 UTC) plus a 30-day `span`, so magpie can draw the remaining-quota curve, Pace and Runs out. Venice does not expose the subscription's real reset day to an inference key.
-- `API balance`: the prepaid USD balance, shown whenever Venice reports the field, including zero (a negative value is displayed as zero). The window is marked as auxiliary (`aside: true`), so magpie shows only the balance text: it draws no progress bar and records no point in the remaining-quota curve or history. An aside window also does not participate in magpie's balance-based routing between accounts of the same currency; a single Venice account is unaffected.
+- `API balance`: the prepaid USD balance, shown whenever Venice reports the field, including zero (a negative value is displayed as zero). The window is marked as auxiliary (`aside: true`), so magpie shows only the balance text: it draws no progress bar and records no point in the remaining-quota curve or history. Aside wallet windows (`Plan credits` and `API balance`) also do not participate in magpie's balance-based routing between accounts of the same currency; a single Venice account is unaffected.
 - `plan option`: added at the end only when the configured plan value is not recognized. It reads `not recognized; use pro, plus or max` and never echoes the bad value; the credits fall back to the untiered wallet window.
 
 An HTTP 402 from a usage request is displayed as the balance or spending-cap condition described in [Sign-in](#http-402-is-not-an-expired-sign-in).
@@ -80,7 +80,7 @@ Options are resolved once when the plugin loads, and magpie reloads the plugin w
 
 ### Charts and history
 
-magpie does not backfill history: recording starts after the plugin is installed. The estimate chart shows Pace and Runs out only after at least three readings spanning at least one hour, and a readable line takes about a day of use. The `API balance` window has no balance-over-time chart: magpie draws that chart only for a top-level balance card without windows and does not support plugin wallet windows. Its `aside` marker also keeps it out of the remaining-quota history and progress bars.
+magpie does not backfill history: recording starts after the plugin is installed. Only a `Plan credits (est.)` window with a configured plan tier draws the remaining-quota curve; wallet windows do not. Pace needs only the estimate's `resetsAt` and `span`, so it can be shown as soon as there is a reading. Runs out needs at least three readings within the current period spanning at least one hour, and a readable line takes about a day of use.
 
 ## Install
 
@@ -100,7 +100,7 @@ The package is also an OpenCode v1 plugin and can be used as an OpenCode plugin.
 
 ## Multiple machines
 
-magpie's encrypted sync carries the plugin list, including each plugin's spec and its options, so the `plan` option follows the plugin to the other machine. A plugin installed from a local path (for example `magpie plugin add ./`) is not uploaded.
+magpie's encrypted sync carries the plugin list, including each plugin's spec and its options. On a receiving machine, the options arrive with that plugin entry when the machine first installs the plugin. A plugin that is already installed is not overwritten by sync, so set its options later on that machine with `magpie plugin options`. A plugin installed from a local path (for example `magpie plugin add ./`) is not uploaded.
 
 The receiving machine installs each plugin from its spec verbatim. An npm spec needs access to the npm registry; a `github:` spec needs access to GitHub. When an install fails, magpie only writes a log line and the sync still counts as successful, so no error appears in the UI. Installing from npm is therefore the more reliable choice:
 
